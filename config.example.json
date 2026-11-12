@@ -1,0 +1,21 @@
+{
+  "providers": {
+    "antigravity": {
+      "enabled": true,
+      "description": "Auto-detects running Antigravity IDE or launches headless background language_server"
+    },
+    "gemini": {
+      "enabled": false,
+      "api_key": "YOUR_GEMINI_API_KEY_HERE"
+    },
+    "openai": {
+      "enabled": false,
+      "api_key": "sk-proj-YOUR_OPENAI_KEY_HERE"
+    },
+    "anthropic": {
+      "enabled": false,
+      "api_key": "sk-ant-YOUR_ANTHROPIC_KEY_HERE"
+    }
+  },
+  "refresh_interval_seconds": 30
+}

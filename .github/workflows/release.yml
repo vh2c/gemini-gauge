@@ -1,0 +1,98 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build macOS App
+        run: |
+          chmod +x macos/build.sh
+          ./macos/build.sh
+          cd macos
+          zip -r ../Universal-AI-Quota-macOS-vh2c.zip "Universal AI Quota.app"
+
+      - name: Upload macOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Universal-AI-Quota-macOS-vh2c
+          path: Universal-AI-Quota-macOS-vh2c.zip
+
+  package-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Package Windows files
+        shell: pwsh
+        run: |
+          Compress-Archive -Path core, windows, config.example.json -DestinationPath Universal-AI-Quota-Windows-vh2c.zip
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Universal-AI-Quota-Windows-vh2c
+          path: Universal-AI-Quota-Windows-vh2c.zip
+
+  package-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Package Linux files
+        run: |
+          chmod +x linux/install.sh linux/quota-hub linux/quota-hub.py
+          tar -czvf Universal-AI-Quota-Linux-vh2c.tar.gz core linux config.example.json LICENSE README.md
+
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Universal-AI-Quota-Linux-vh2c
+          path: Universal-AI-Quota-Linux-vh2c.tar.gz
+
+  publish-release:
+    needs: [build-macos, package-windows, package-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download macOS Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Universal-AI-Quota-macOS-vh2c
+
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Universal-AI-Quota-Windows-vh2c
+
+      - name: Download Linux Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Universal-AI-Quota-Linux-vh2c
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            Universal-AI-Quota-macOS-vh2c.zip
+            Universal-AI-Quota-Windows-vh2c.zip
+            Universal-AI-Quota-Linux-vh2c.tar.gz
+          draft: false
+          prerelease: false
+          generate_release_notes: true

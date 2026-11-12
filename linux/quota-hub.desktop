@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Universal AI Quota Hub
+Comment=Multi-Provider AI Quota & Rate Limit Monitor (Antigravity, Gemini, OpenAI, Claude)
+Exec=quota-hub
+Icon=quota-hub
+Terminal=false
+Type=Application
+Categories=Development;Utility;
+Keywords=ai;quota;antigravity;gemini;openai;claude;
+StartupWMClass=Universal AI Quota Hub
