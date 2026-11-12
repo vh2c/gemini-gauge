@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+*.app/
+*.dSYM/
+
+# Linux / Python
+__pycache__/
+*.pyc
+
+# Local Config & Cache
+quota_cache.json
+config.json
+prefs.json
+
+# Dist builds
+dist/

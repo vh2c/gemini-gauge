@@ -59,7 +59,14 @@ class UniversalQuotaEngine {
     const valid = results.filter(r => r.status === 'fulfilled' && r.value !== null).map(r => r.value);
 
     if (valid.length === 0) {
-      throw new Error('Nenhum provedor de IA respondeu ou está configurado.');
+      return {
+        needs_setup: true,
+        account: 'Nenhum Provedor Configurado',
+        plan: 'Configurar',
+        providers_count: 0,
+        groups: [],
+        updated_at: new Date().toLocaleTimeString('pt-BR')
+      };
     }
 
     const allGroups = [];

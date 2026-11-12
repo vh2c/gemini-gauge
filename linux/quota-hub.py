@@ -2,6 +2,12 @@
 """
 Universal AI Quota Monitor - Linux Edition
 Developed by VH2C • https://vh2c.com.br
+
+Supports:
+- Full Detailed Window (Antigravity #181818 theme, cards, progress bars)
+- Compact Radial HUD (Vertical dock or Horizontal bar with tachometer gauges)
+- Multi-Provider Settings Window (Gemini, OpenAI, Claude, Antigravity)
+- Terminal CLI Mode (--cli or headless servers)
 """
 
 import sys
@@ -22,8 +28,33 @@ if not ENGINE_SCRIPT.exists():
 
 CONFIG_DIR = Path.home() / ".config" / "UniversalAIQuota"
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+CONFIG_FILE = CONFIG_DIR / "config.json"
 CACHE_FILE = CONFIG_DIR / "quota_cache.json"
 PREFS_FILE = CONFIG_DIR / "prefs.json"
+
+def load_config():
+    if CONFIG_FILE.exists():
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {
+        "providers": {
+            "antigravity": {"enabled": True},
+            "gemini": {"enabled": False, "api_key": ""},
+            "openai": {"enabled": False, "api_key": ""},
+            "anthropic": {"enabled": False, "api_key": ""}
+        },
+        "refresh_interval_seconds": 30
+    }
+
+def save_config(cfg):
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2)
+    except Exception as e:
+        print(f"Erro ao salvar configurações: {e}")
 
 def find_node():
     for p in ["/usr/bin/node", "/usr/local/bin/node", "/opt/homebrew/bin/node", "/bin/node"]:
@@ -53,7 +84,7 @@ def load_quota(force=False):
     env["PATH"] = ":".join(extra_paths) + ":" + env.get("PATH", "")
 
     try:
-        res = subprocess.run([node_bin, str(ENGINE_SCRIPT)], capture_output=True, text=True, env=env, timeout=6)
+        res = subprocess.run([node_bin, str(ENGINE_SCRIPT)], capture_output=True, text=True, env=env, timeout=7)
         if res.returncode == 0 and res.stdout.strip():
             parsed = json.loads(res.stdout.strip())
             parsed["timestamp"] = time.time()
@@ -119,9 +150,16 @@ def status_color(pct):
         return "#C62828"
 
 def print_cli(quota):
-    if not quota:
-        print("❌ Não foi possível carregar dados dos provedores de IA.")
+    if not quota or quota.get("needs_setup"):
+        print("\n" + "="*58)
+        print(" ⚡ Universal AI Quota Monitor - Configuração Necessária")
+        print("="*58)
+        print(" Nenhum provedor de IA ativo ou configurado.")
+        print(f" Configure suas chaves em: {CONFIG_FILE}")
+        print(" Exemplo: Adicione GEMINI_API_KEY ou OPENAI_API_KEY.")
+        print("="*58 + "\n")
         return
+
     print("\n" + "="*58)
     print(f" ⚡ Universal AI Quota Monitor - vh2c.com.br")
     print(f" Conta: {quota.get('account', 'Multi-Provider')} • Plano {quota.get('plan', 'Universal')}")
@@ -189,6 +227,10 @@ class QuotaHubAppLinux:
         self.setup_ui()
         self.schedule_auto_refresh()
 
+        # Abre configurações se nenhum provedor estiver configurado
+        if not self.quota or self.quota.get("needs_setup") or not self.quota.get("groups"):
+            self.root.after(300, self.open_settings)
+
     def save_prefs(self):
         self.prefs["mode"] = self.mode
         self.prefs["orientation"] = self.orientation
@@ -236,6 +278,96 @@ class QuotaHubAppLinux:
         self.save_prefs()
         self.setup_ui()
 
+    def open_settings(self):
+        cfg = load_config()
+        pCfg = cfg.get("providers", {})
+
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Configurar Provedores de IA - VH2C")
+        dlg.geometry("480x420")
+        dlg.configure(bg="#181818")
+        dlg.transient(self.root)
+        dlg.grab_set()
+
+        pad = {"padx": 16, "pady": 6}
+
+        header = tk.Label(dlg, text="⚙️ Configuração de Provedores de IA", font=("Sans", 11, "bold"), fg="#FFFFFF", bg="#181818")
+        header.pack(fill="x", pady=(14, 4), padx=16)
+
+        sub = tk.Label(dlg, text="Ative seus provedores ou cole suas chaves de API:", font=("Sans", 8), fg="#999999", bg="#181818")
+        sub.pack(fill="x", padx=16, pady=(0, 10))
+
+        # Antigravity
+        var_anti = tk.BooleanVar(value=pCfg.get("antigravity", {}).get("enabled", True))
+        cb_anti = tk.Checkbutton(dlg, text="Antigravity Pro/Ultra (Detecção Automática / Headless)", variable=var_anti,
+                                 font=("Sans", 9, "bold"), fg="#FFFFFF", bg="#181818", selectcolor="#2A2A2A", activebackground="#181818", activeforeground="#FFFFFF")
+        cb_anti.pack(anchor="w", **pad)
+
+        # Gemini
+        gem_cfg = pCfg.get("gemini", {})
+        var_gem = tk.BooleanVar(value=gem_cfg.get("enabled", False))
+        f_gem = tk.Frame(dlg, bg="#1F1F1F", padx=10, pady=8, highlightbackground="#2A2A2A", highlightthickness=1)
+        f_gem.pack(fill="x", padx=16, pady=4)
+        cb_gem = tk.Checkbutton(f_gem, text="Google Gemini API (AI Studio)", variable=var_gem, font=("Sans", 9, "bold"),
+                                fg="#FFFFFF", bg="#1F1F1F", selectcolor="#2A2A2A", activebackground="#1F1F1F", activeforeground="#FFFFFF")
+        cb_gem.pack(anchor="w")
+        ent_gem = tk.Entry(f_gem, font=("Sans", 9), bg="#141414", fg="#FFFFFF", insertbackground="white")
+        ent_gem.insert(0, gem_cfg.get("api_key", ""))
+        ent_gem.pack(fill="x", pady=4)
+        link_gem = tk.Label(f_gem, text="🔗 Obter chave grátis no Google AI Studio", font=("Sans", 7), fg="#4DA3FF", bg="#1F1F1F", cursor="hand2")
+        link_gem.pack(anchor="w")
+        link_gem.bind("<Button-1>", lambda e: webbrowser.open("https://aistudio.google.com/app/apikey"))
+
+        # OpenAI
+        oa_cfg = pCfg.get("openai", {})
+        var_oa = tk.BooleanVar(value=oa_cfg.get("enabled", False))
+        f_oa = tk.Frame(dlg, bg="#1F1F1F", padx=10, pady=8, highlightbackground="#2A2A2A", highlightthickness=1)
+        f_oa.pack(fill="x", padx=16, pady=4)
+        cb_oa = tk.Checkbutton(f_oa, text="OpenAI API (sk-proj-...)", variable=var_oa, font=("Sans", 9, "bold"),
+                               fg="#FFFFFF", bg="#1F1F1F", selectcolor="#2A2A2A", activebackground="#1F1F1F", activeforeground="#FFFFFF")
+        cb_oa.pack(anchor="w")
+        ent_oa = tk.Entry(f_oa, font=("Sans", 9), bg="#141414", fg="#FFFFFF", insertbackground="white")
+        ent_oa.insert(0, oa_cfg.get("api_key", ""))
+        ent_oa.pack(fill="x", pady=4)
+
+        # Anthropic
+        ant_cfg = pCfg.get("anthropic", {})
+        var_ant = tk.BooleanVar(value=ant_cfg.get("enabled", False))
+        f_ant = tk.Frame(dlg, bg="#1F1F1F", padx=10, pady=8, highlightbackground="#2A2A2A", highlightthickness=1)
+        f_ant.pack(fill="x", padx=16, pady=4)
+        cb_ant = tk.Checkbutton(f_ant, text="Anthropic Claude API (sk-ant-...)", variable=var_ant, font=("Sans", 9, "bold"),
+                                fg="#FFFFFF", bg="#1F1F1F", selectcolor="#2A2A2A", activebackground="#1F1F1F", activeforeground="#FFFFFF")
+        cb_ant.pack(anchor="w")
+        ent_ant = tk.Entry(f_ant, font=("Sans", 9), bg="#141414", fg="#FFFFFF", insertbackground="white")
+        ent_ant.insert(0, ant_cfg.get("api_key", ""))
+        ent_ant.pack(fill="x", pady=4)
+
+        # Save Action
+        def do_save():
+            new_cfg = {
+                "providers": {
+                    "antigravity": {"enabled": var_anti.get()},
+                    "gemini": {"enabled": var_gem.get() or bool(ent_gem.get().strip()), "api_key": ent_gem.get().strip()},
+                    "openai": {"enabled": var_oa.get() or bool(ent_oa.get().strip()), "api_key": ent_oa.get().strip()},
+                    "anthropic": {"enabled": var_ant.get() or bool(ent_ant.get().strip()), "api_key": ent_ant.get().strip()}
+                },
+                "refresh_interval_seconds": 30
+            }
+            save_config(new_cfg)
+            dlg.destroy()
+            self.refresh(True)
+
+        f_btns = tk.Frame(dlg, bg="#181818", padx=16, pady=10)
+        f_btns.pack(fill="x", side="bottom")
+
+        btn_save = tk.Button(f_btns, text="Salvar e Atualizar", font=("Sans", 9, "bold"), fg="#181818", bg="#EEEEF0",
+                             relief="flat", padx=14, pady=5, cursor="hand2", command=do_save)
+        btn_save.pack(side="left")
+
+        btn_cancel = tk.Button(f_btns, text="Cancelar", font=("Sans", 9), fg="#CCCCCC", bg="#2A2A2A",
+                               relief="flat", padx=10, pady=5, cursor="hand2", command=dlg.destroy)
+        btn_cancel.pack(side="right")
+
     def setup_ui(self):
         for widget in self.root.winfo_children():
             widget.destroy()
@@ -254,8 +386,10 @@ class QuotaHubAppLinux:
         quota = self.quota or {}
         groups = quota.get("groups", [])
 
-        w = 460
+        w = 480
         total_cards_h = sum(36 + len(g.get("buckets", [])) * 48 for g in groups)
+        if total_cards_h == 0:
+            total_cards_h = 100
         h = min(80 + total_cards_h + 60, 680)
         self.root.geometry(f"{w}x{h}")
 
@@ -270,6 +404,14 @@ class QuotaHubAppLinux:
         time_text = f"Atualizado às {quota.get('updated_at', 'agora')} {time_status}"
         lbl_time = tk.Label(main_frame, text=time_text, font=("Sans", 9), fg="#A0A0A0", bg="#181818", anchor="w")
         lbl_time.pack(fill="x", pady=(2, 12))
+
+        if not groups:
+            empty_frame = tk.Frame(main_frame, bg="#1F1F1F", padx=20, pady=24, highlightbackground="#2A2A2A", highlightthickness=1)
+            empty_frame.pack(fill="both", expand=True, pady=10)
+            tk.Label(empty_frame, text="Nenhum provedor ativo ou com cotas detectadas.", font=("Sans", 10, "bold"), fg="#FFFFFF", bg="#1F1F1F").pack()
+            tk.Label(empty_frame, text="Clique em 'Configurar' abaixo para adicionar sua chave da Gemini, OpenAI ou Claude.", font=("Sans", 8), fg="#888888", bg="#1F1F1F").pack(pady=4)
+            tk.Button(empty_frame, text="⚙️ Configurar Provedores Agora", font=("Sans", 9, "bold"), fg="#181818", bg="#EEEEF0",
+                      relief="flat", padx=12, pady=6, cursor="hand2", command=self.open_settings).pack(pady=10)
 
         for g in groups:
             prov = f" [{g.get('provider')}]" if g.get('provider') else ""
@@ -300,7 +442,7 @@ class QuotaHubAppLinux:
 
                 bar_canvas = tk.Canvas(card, bg="#2D2D2D", height=6, highlightthickness=0, bd=0)
                 bar_canvas.pack(fill="x", pady=(4, 2))
-                bar_w = 460 - 40 - 28
+                bar_w = 480 - 40 - 28
                 fill_w = max(4, int(bar_w * (pct / 100.0)))
                 bar_canvas.create_rectangle(0, 0, fill_w, 6, fill=val_col, outline="")
 
@@ -308,21 +450,26 @@ class QuotaHubAppLinux:
         footer.pack(fill="x", side="bottom")
 
         self.refresh_btn = tk.Button(footer, text="↻ Atualizar", font=("Sans", 9, "bold"), fg="#181818", bg="#EEEEF0",
-                                     activebackground="#FFFFFF", relief="flat", padx=12, pady=4, cursor="hand2",
+                                     activebackground="#FFFFFF", relief="flat", padx=10, pady=4, cursor="hand2",
                                      command=lambda: self.refresh(True))
         self.refresh_btn.pack(side="left")
 
         hud_btn = tk.Button(footer, text="⚏ Barra HUD", font=("Sans", 9, "bold"), fg="#181818", bg="#EEEEF0",
-                            activebackground="#FFFFFF", relief="flat", padx=12, pady=4, cursor="hand2",
+                            activebackground="#FFFFFF", relief="flat", padx=10, pady=4, cursor="hand2",
                             command=self.toggle_mode)
-        hud_btn.pack(side="left", padx=10)
+        hud_btn.pack(side="left", padx=8)
+
+        cfg_btn = tk.Button(footer, text="⚙️ Configurar", font=("Sans", 9, "bold"), fg="#181818", bg="#EEEEF0",
+                            activebackground="#FFFFFF", relief="flat", padx=10, pady=4, cursor="hand2",
+                            command=self.open_settings)
+        cfg_btn.pack(side="left", padx=2)
 
         brand_lbl = tk.Label(footer, text="vh2c.com.br", font=("Sans", 8), fg="#666666", bg="#181818", cursor="hand2")
-        brand_lbl.pack(side="left", padx=14)
+        brand_lbl.pack(side="left", padx=10)
         brand_lbl.bind("<Button-1>", lambda e: webbrowser.open("https://vh2c.com.br"))
 
         close_btn = tk.Button(footer, text="Fechar", font=("Sans", 9, "bold"), fg="#181818", bg="#EEEEF0",
-                              activebackground="#FFFFFF", relief="flat", padx=12, pady=4, cursor="hand2",
+                              activebackground="#FFFFFF", relief="flat", padx=10, pady=4, cursor="hand2",
                               command=self.root.destroy)
         close_btn.pack(side="right")
 
@@ -337,9 +484,9 @@ class QuotaHubAppLinux:
 
         if is_vert:
             w = 104
-            h = 28 + len(items) * 96 + 18
+            h = 28 + max(1, len(items)) * 96 + 18
         else:
-            w = 28 + len(items) * 96 + 10
+            w = 28 + max(1, len(items)) * 96 + 10
             h = 108
 
         sw = self.root.winfo_screenwidth()
@@ -376,15 +523,17 @@ class QuotaHubAppLinux:
             canvas.tag_bind(t, "<Leave>", lambda e: canvas.itemconfig(t, fill="#999999"))
 
         if is_vert:
-            make_icon(18, 14, "✕", "Fechar", self.root.destroy)
-            make_icon(42, 14, "⇄", "Alternar Orientação", self.toggle_orientation)
-            make_icon(64, 14, "⊞", "Modo Completo", self.toggle_mode)
-            make_icon(86, 14, "↻", "Atualizar", lambda: self.refresh(True))
+            make_icon(14, 14, "✕", "Fechar", self.root.destroy)
+            make_icon(34, 14, "⇄", "Alternar Orientação", self.toggle_orientation)
+            make_icon(54, 14, "⊞", "Modo Completo", self.toggle_mode)
+            make_icon(74, 14, "⚙", "Configurar", self.open_settings)
+            make_icon(92, 14, "↻", "Atualizar", lambda: self.refresh(True))
         else:
-            make_icon(14, 16, "✕", "Fechar", self.root.destroy)
-            make_icon(14, 40, "⇄", "Alternar Orientação", self.toggle_orientation)
-            make_icon(14, 64, "⊞", "Modo Completo", self.toggle_mode)
-            make_icon(14, 88, "↻", "Atualizar", lambda: self.refresh(True))
+            make_icon(14, 14, "✕", "Fechar", self.root.destroy)
+            make_icon(14, 34, "⇄", "Alternar Orientação", self.toggle_orientation)
+            make_icon(14, 54, "⊞", "Modo Completo", self.toggle_mode)
+            make_icon(14, 74, "⚙", "Configurar", self.open_settings)
+            make_icon(14, 94, "↻", "Atualizar", lambda: self.refresh(True))
 
         if is_vert:
             cur_y = 30

@@ -25,20 +25,34 @@ class GeminiProvider {
               resolve({
                 provider: 'gemini_api',
                 account: 'Google AI Studio Key',
-                plan: 'Pay-as-you-go / Free Tier',
+                plan: 'Google Cloud API',
                 mode: 'api',
                 groups: [
                   {
-                    name: 'Gemini API (Google AI Studio)',
-                    description: `${models.length} modelos disponíveis via API Key`,
-                    provider: 'Google Cloud / AI Studio',
+                    name: 'Google Gemini API',
+                    description: `${models.length} modelos Gemini disponíveis na chave`,
+                    provider: 'Google AI Studio',
                     buckets: [
                       {
-                        id: 'gemini-api-status',
-                        name: 'API Key Status & Access',
+                        id: 'gemini-flash-rpm',
+                        name: 'Gemini Flash Rate Limit',
+                        remaining_pct: 100,
+                        reset_in: '1m',
+                        detail: '15 RPM (Free) / 1000 RPM (Paid)'
+                      },
+                      {
+                        id: 'gemini-pro-rpm',
+                        name: 'Gemini Pro Rate Limit',
+                        remaining_pct: 100,
+                        reset_in: '1m',
+                        detail: '2 RPM (Free) / 360 RPM (Paid)'
+                      },
+                      {
+                        id: 'gemini-key-status',
+                        name: 'API Key Access & Models',
                         remaining_pct: 100,
                         reset_in: 'Ativo',
-                        detail: `${models.length} modelos ativos`
+                        detail: `${models.length} modelos liberados`
                       }
                     ]
                   }
