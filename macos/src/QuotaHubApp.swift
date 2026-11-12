@@ -25,6 +25,7 @@ struct QuotaData: Codable {
     var from_cache: Bool?
     var cache_age_seconds: Int?
     var timestamp: Double?
+    var needs_setup: Bool?
 }
 
 struct GaugeItem {
@@ -35,6 +36,16 @@ struct GaugeItem {
     let resetIn: String?
     let detail: String?
     let provider: String?
+}
+
+struct ProviderConfig: Codable {
+    var enabled: Bool?
+    var api_key: String?
+}
+
+struct AppConfig: Codable {
+    var providers: [String: ProviderConfig]?
+    var refresh_interval_seconds: Int?
 }
 
 extension QuotaData {
@@ -92,6 +103,40 @@ class QuotaManager {
     
     static var cachePath: String {
         return (appSupportDir as NSString).appendingPathComponent("quota_cache.json")
+    }
+    
+    static var configDir: String {
+        let path = NSString(string: "~/.config/UniversalAIQuota").expandingTildeInPath
+        try? FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+        return path
+    }
+    
+    static var configPath: String {
+        return (configDir as NSString).appendingPathComponent("config.json")
+    }
+    
+    static func loadConfig() -> AppConfig {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: configPath)),
+              let cfg = try? JSONDecoder().decode(AppConfig.self, from: data) else {
+            return AppConfig(
+                providers: [
+                    "antigravity": ProviderConfig(enabled: true, api_key: nil),
+                    "gemini": ProviderConfig(enabled: false, api_key: ""),
+                    "openai": ProviderConfig(enabled: false, api_key: ""),
+                    "anthropic": ProviderConfig(enabled: false, api_key: "")
+                ],
+                refresh_interval_seconds: 30
+            )
+        }
+        return cfg
+    }
+    
+    static func saveConfig(_ cfg: AppConfig) {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
+        if let data = try? encoder.encode(cfg) {
+            try? data.write(to: URL(fileURLWithPath: configPath))
+        }
     }
     
     static var engineScript: String {
@@ -204,15 +249,13 @@ class QuotaManager {
             try task.run()
             task.waitUntilExit()
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            if let decoded = try? JSONDecoder().decode(QuotaData.self, from: data) {
-                var saved = decoded
-                saved.timestamp = Date().timeIntervalSince1970
-                saved.from_cache = false
-                saved.cache_age_seconds = 0
-                if let encoded = try? JSONEncoder().encode(saved) {
+            if task.terminationStatus == 0, let quota = try? JSONDecoder().decode(QuotaData.self, from: data) {
+                var qWithTs = quota
+                qWithTs.timestamp = Date().timeIntervalSince1970
+                if let encoded = try? JSONEncoder().encode(qWithTs) {
                     try? encoded.write(to: URL(fileURLWithPath: cachePath))
                 }
-                return saved
+                return qWithTs
             }
         } catch {
             print("Fetch error: \(error)")
@@ -221,130 +264,206 @@ class QuotaManager {
     }
 }
 
-// MARK: - Radial Gauge View (HUD Widget)
-class RadialGaugeView: NSView {
-    let item: GaugeItem
+// MARK: - Tachometer Gauge View
+class TachometerGaugeView: NSView {
+    var item: GaugeItem
     
-    init(frame: NSRect, item: GaugeItem) {
+    init(item: GaugeItem) {
         self.item = item
-        super.init(frame: frame)
-        let rt = item.resetIn != nil && !item.resetIn!.isEmpty ? item.resetIn! : "Totalmente disponível"
-        let prov = item.provider != nil ? "Provedor: \(item.provider!)\n" : ""
-        self.toolTip = "\(prov)\(item.modelName) • \(item.title)\nCota restante: \(item.percentage)%\nStatus / Reset: \(rt)"
+        super.init(frame: NSRect(x: 0, y: 0, width: 88, height: 96))
     }
     
-    required init?(coder: NSCoder) { fatalError() }
-    
-    var statusColor: NSColor {
-        if item.percentage > 50 {
-            return NSColor(srgbRed: 0x22/255.0, green: 0x92/255.0, blue: 0x1E/255.0, alpha: 1.0)
-        } else if item.percentage > 20 {
-            return NSColor(srgbRed: 0xC8/255.0, green: 0x64/255.0, blue: 0x02/255.0, alpha: 1.0)
-        } else {
-            return NSColor(srgbRed: 0xC6/255.0, green: 0x28/255.0, blue: 0x28/255.0, alpha: 1.0)
-        }
-    }
-    
-    override func mouseDown(with event: NSEvent) {
-        if event.clickCount == 2 {
-            (NSApp.delegate as? AppDelegate)?.switchToFullMode()
-        } else {
-            super.mouseDown(with: event)
-        }
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
     
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
         
         let cx = bounds.midX
-        let cy = bounds.midY + 5
+        let cy: CGFloat = 52.0
+        let radius: CGFloat = 34.0
+        let center = CGPoint(x: cx, y: cy)
         
-        let rOuter: CGFloat = 27.0
-        let rInner: CGFloat = 20.5
-        let rCenter: CGFloat = 18.0
-        let totalTicks = 36
+        let startAngleDeg: Double = 220.0
+        let endAngleDeg: Double = -40.0
+        let totalSweepDeg: Double = 260.0
         
-        let activeTicks = Int(round(Double(totalTicks) * Double(max(0, min(100, item.percentage))) / 100.0))
-        let activeCol = statusColor.cgColor
-        let inactiveCol = NSColor(white: 0.32, alpha: 0.7).cgColor
+        let toRad = { (deg: Double) -> Double in deg * Double.pi / 180.0 }
         
-        ctx.setLineWidth(2.0)
-        ctx.setLineCap(.round)
+        // 1. Fundo do dial circular
+        let dialBgRect = CGRect(x: cx - radius - 5, y: cy - radius - 5, width: (radius + 5) * 2, height: (radius + 5) * 2)
+        context.setFillColor(NSColor(srgbRed: 0x14/255.0, green: 0x14/255.0, blue: 0x15/255.0, alpha: 0.95).cgColor)
+        context.fillEllipse(in: dialBgRect)
         
-        for i in 0..<totalTicks {
-            let frac = Double(i) / Double(totalTicks)
-            let angle = -Double.pi / 2.0 + frac * 2.0 * Double.pi
+        // 2. Trilho do Tacômetro
+        let trackPath = CGMutablePath()
+        trackPath.addArc(
+            center: center,
+            radius: radius,
+            startAngle: CGFloat(toRad(startAngleDeg)),
+            endAngle: CGFloat(toRad(endAngleDeg)),
+            clockwise: true
+        )
+        context.setStrokeColor(NSColor(srgbRed: 0x2A/255.0, green: 0x2A/255.0, blue: 0x2D/255.0, alpha: 1.0).cgColor)
+        context.setLineWidth(5.5)
+        context.setLineCap(.round)
+        context.addPath(trackPath)
+        context.strokePath()
+        
+        // 3. Ticks e Graduações
+        let numTicks = 24
+        for i in 0...numTicks {
+            let frac = Double(i) / Double(numTicks)
+            let angleDeg = startAngleDeg - frac * totalSweepDeg
+            let rad = toRad(angleDeg)
+            let isMajor = (i % 6 == 0)
+            let tickLen: CGFloat = isMajor ? 5.0 : 3.0
+            let rInner = radius - 3.5
+            let rOuter = rInner - tickLen
             
-            let p1 = CGPoint(x: cx + CGFloat(cos(angle)) * rInner, y: cy + CGFloat(sin(angle)) * rInner)
-            let p2 = CGPoint(x: cx + CGFloat(cos(angle)) * rOuter, y: cy + CGFloat(sin(angle)) * rOuter)
+            let p1 = CGPoint(x: cx + CGFloat(cos(rad)) * rInner, y: cy + CGFloat(sin(rad)) * rInner)
+            let p2 = CGPoint(x: cx + CGFloat(cos(rad)) * rOuter, y: cy + CGFloat(sin(rad)) * rOuter)
             
-            ctx.setStrokeColor(i < activeTicks ? activeCol : inactiveCol)
-            ctx.beginPath()
-            ctx.move(to: p1)
-            ctx.addLine(to: p2)
-            ctx.strokePath()
+            let tickColor = isMajor
+                ? NSColor(white: 0.55, alpha: 0.85).cgColor
+                : NSColor(white: 0.32, alpha: 0.50).cgColor
+            context.setStrokeColor(tickColor)
+            context.setLineWidth(isMajor ? 1.2 : 0.8)
+            context.strokeLineSegments(between: [p1, p2])
         }
         
-        ctx.setFillColor(activeCol)
-        ctx.fillEllipse(in: CGRect(x: cx - rCenter, y: cy - rCenter, width: rCenter * 2, height: rCenter * 2))
+        // 4. Arco Preenchido Dinâmico
+        let pct = Double(min(max(item.percentage, 0), 100))
+        let sweepPctDeg = (pct / 100.0) * totalSweepDeg
+        let currentAngleDeg = startAngleDeg - sweepPctDeg
         
-        let pctStr = "\(item.percentage)%"
-        let fontSize: CGFloat = item.percentage >= 100 ? 9.0 : 10.0
-        let pctFont = NSFont.monospacedDigitSystemFont(ofSize: fontSize, weight: .bold)
+        let colorGreen = NSColor(srgbRed: 0x00/255.0, green: 0xE6/255.0, blue: 0x99/255.0, alpha: 1.0)
+        let colorYellow = NSColor(srgbRed: 0xF5/255.0, green: 0xA6/255.0, blue: 0x23/255.0, alpha: 1.0)
+        let colorRed = NSColor(srgbRed: 0xFF/255.0, green: 0x4D/255.0, blue: 0x4F/255.0, alpha: 1.0)
+        
+        let activeColor: NSColor
+        if pct >= 50.0 {
+            activeColor = colorGreen
+        } else if pct >= 20.0 {
+            activeColor = colorYellow
+        } else {
+            activeColor = colorRed
+        }
+        
+        if sweepPctDeg > 1.0 {
+            let activePath = CGMutablePath()
+            activePath.addArc(
+                center: center,
+                radius: radius,
+                startAngle: CGFloat(toRad(startAngleDeg)),
+                endAngle: CGFloat(toRad(currentAngleDeg)),
+                clockwise: true
+            )
+            context.setStrokeColor(activeColor.cgColor)
+            context.setLineWidth(5.5)
+            context.setLineCap(.round)
+            context.addPath(activePath)
+            context.strokePath()
+        }
+        
+        // 5. Ponteiro / Agulha Estilo Tacômetro
+        let needleAngleRad = toRad(currentAngleDeg)
+        let needleLen = radius - 8.0
+        let tipPoint = CGPoint(
+            x: cx + CGFloat(cos(needleAngleRad)) * needleLen,
+            y: cy + CGFloat(sin(needleAngleRad)) * needleLen
+        )
+        let baseAngle1 = needleAngleRad + Double.pi / 2.0
+        let baseAngle2 = needleAngleRad - Double.pi / 2.0
+        let baseR: CGFloat = 2.5
+        let baseP1 = CGPoint(x: cx + CGFloat(cos(baseAngle1)) * baseR, y: cy + CGFloat(sin(baseAngle1)) * baseR)
+        let baseP2 = CGPoint(x: cx + CGFloat(cos(baseAngle2)) * baseR, y: cy + CGFloat(sin(baseAngle2)) * baseR)
+        
+        let needlePath = CGMutablePath()
+        needlePath.move(to: baseP1)
+        needlePath.addLine(to: tipPoint)
+        needlePath.addLine(to: baseP2)
+        needlePath.closeSubpath()
+        
+        context.setFillColor(NSColor(white: 0.95, alpha: 0.95).cgColor)
+        context.addPath(needlePath)
+        context.fillPath()
+        
+        // Hub central
+        let hubRect = CGRect(x: cx - 4, y: cy - 4, width: 8, height: 8)
+        context.setFillColor(NSColor(srgbRed: 0x2A/255.0, green: 0x2A/255.0, blue: 0x2E/255.0, alpha: 1.0).cgColor)
+        context.fillEllipse(in: hubRect)
+        context.setStrokeColor(activeColor.cgColor)
+        context.setLineWidth(1.2)
+        context.strokeEllipse(in: hubRect)
+        
+        // 6. Texto Curvado Superior
+        drawCurvedText(
+            text: item.title.uppercased(),
+            center: center,
+            radius: radius + 7.0,
+            startAngleRad: toRad(170.0),
+            totalSweepRad: toRad(160.0),
+            context: context
+        )
+        
+        // 7. Porcentagem no Centro Inferior
+        let pctStr = "\(item.percentage)%" as NSString
         let pctAttrs: [NSAttributedString.Key: Any] = [
-            .font: pctFont,
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .bold),
             .foregroundColor: NSColor.white
         ]
-        let pctSize = (pctStr as NSString).size(withAttributes: pctAttrs)
-        let pctRect = CGRect(x: cx - pctSize.width / 2.0, y: cy - pctSize.height / 2.0 + 0.5, width: pctSize.width, height: pctSize.height)
-        (pctStr as NSString).draw(in: pctRect, withAttributes: pctAttrs)
+        let pctSize = pctStr.size(withAttributes: pctAttrs)
+        pctStr.draw(at: CGPoint(x: cx - pctSize.width / 2.0, y: cy - 23.0), withAttributes: pctAttrs)
         
-        drawCurvedText(text: item.title, center: CGPoint(x: cx, y: cy), radius: rOuter + 8.5, context: ctx)
-        
-        let subY = cy - rOuter - 13
+        // 8. Nome do Modelo e Reset Inferior
+        let modelStr = item.modelName as NSString
         let modelAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 10, weight: .bold),
-            .foregroundColor: NSColor.white
+            .font: NSFont.systemFont(ofSize: 9.5, weight: .medium),
+            .foregroundColor: NSColor(white: 0.70, alpha: 1.0)
         ]
-        let modelSize = (item.modelName as NSString).size(withAttributes: modelAttrs)
-        (item.modelName as NSString).draw(in: CGRect(x: cx - modelSize.width / 2.0, y: subY, width: modelSize.width, height: 12), withAttributes: modelAttrs)
+        let mSize = modelStr.size(withAttributes: modelAttrs)
+        modelStr.draw(at: CGPoint(x: cx - mSize.width / 2.0, y: 12.0), withAttributes: modelAttrs)
         
-        if let rt = item.resetIn, !rt.isEmpty {
-            let rtAttrs: [NSAttributedString.Key: Any] = [
+        if let reset = item.resetIn, !reset.isEmpty {
+            let rStr = reset as NSString
+            let rAttrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 8.5, weight: .regular),
-                .foregroundColor: NSColor(white: 0.65, alpha: 1.0)
+                .foregroundColor: NSColor(white: 0.50, alpha: 1.0)
             ]
-            let rtSize = (rt as NSString).size(withAttributes: rtAttrs)
-            (rt as NSString).draw(in: CGRect(x: cx - rtSize.width / 2.0, y: subY - 11, width: rtSize.width, height: 10), withAttributes: rtAttrs)
+            let rSize = rStr.size(withAttributes: rAttrs)
+            rStr.draw(at: CGPoint(x: cx - rSize.width / 2.0, y: 1.0), withAttributes: rAttrs)
         }
     }
     
-    private func drawCurvedText(text: String, center: CGPoint, radius: CGFloat, context: CGContext) {
-        let font = NSFont.systemFont(ofSize: 8.5, weight: .bold)
+    private func drawCurvedText(text: String, center: CGPoint, radius: CGFloat, startAngleRad: Double, totalSweepRad: Double, context: CGContext) {
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: NSColor.white
+            .font: NSFont.systemFont(ofSize: 7.0, weight: .semibold),
+            .foregroundColor: NSColor(white: 0.45, alpha: 0.9)
         ]
-        
         let chars = Array(text)
-        var charWidths: [CGFloat] = []
+        guard !chars.isEmpty else { return }
+        
         var totalWidth: CGFloat = 0
+        var charWidths: [CGFloat] = []
         for ch in chars {
-            let s = String(ch) as NSString
-            let w = s.size(withAttributes: attrs).width
-            charWidths.append(w)
-            totalWidth += w
+            let sz = String(ch).size(withAttributes: attrs)
+            charWidths.append(sz.width)
+            totalWidth += sz.width
         }
         
-        let charHeight = ("A" as NSString).size(withAttributes: attrs).height
-        let angularSpan = totalWidth / radius
-        var currentAngle = Double.pi / 2.0 + Double(angularSpan) / 2.0
+        let perimeterSpan = radius * CGFloat(totalSweepRad)
+        let spacing = (perimeterSpan - totalWidth) / CGFloat(max(chars.count - 1, 1))
+        
+        var currentAngle = startAngleRad
+        let charHeight: CGFloat = 7.0
         
         for (i, ch) in chars.enumerated() {
             let w = charWidths[i]
-            let charAngle = Double(w / radius)
-            let midAngle = currentAngle - charAngle / 2.0
+            let charAngle = Double(w + spacing) / Double(radius)
+            let midAngle = currentAngle - (charAngle / 2.0)
             
             context.saveGState()
             let x = center.x + CGFloat(cos(midAngle)) * radius
@@ -378,6 +497,9 @@ class HudContainerView: NSView {
             } else if event.charactersIgnoringModifiers == "r" {
                 delegate?.refreshClicked()
                 return
+            } else if event.charactersIgnoringModifiers == "," {
+                delegate?.openSettings()
+                return
             }
         }
         if event.keyCode == 53 {
@@ -402,6 +524,8 @@ enum HudOrientation: String {
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var fullWindow: NSWindow?
     var hudWindow: NSPanel?
+    var settingsWindow: NSWindow?
+    var statusItem: NSStatusItem?
     
     var currentMode: DisplayMode = .full
     var hudOrientation: HudOrientation = .vertical
@@ -413,7 +537,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var isFirstLaunch: Bool = true
     var latestQuota: QuotaData?
     
+    // Settings fields
+    var geminiCheck: NSButton?
+    var geminiKeyField: NSTextField?
+    var antigravityCheck: NSButton?
+    var openaiCheck: NSButton?
+    var openaiKeyField: NSTextField?
+    var anthropicCheck: NSButton?
+    var anthropicKeyField: NSTextField?
+    
     func applicationDidFinishLaunching(_ notification: Notification) {
+        setupStatusItem()
+        
         if let savedMode = UserDefaults.standard.string(forKey: "uaqm_display_mode"),
            let mode = DisplayMode(rawValue: savedMode) {
             currentMode = mode
@@ -428,8 +563,90 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self.latestQuota = initialQuota
             renderCurrentMode()
             startAutoRefreshTimer()
+            if initialQuota.needs_setup == true || initialQuota.groups.isEmpty {
+                openSettings()
+            }
         } else {
-            NSApp.terminate(nil)
+            openSettings()
+        }
+    }
+    
+    func setupStatusItem() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        if let button = statusItem?.button {
+            if let img = NSImage(systemSymbolName: "gauge.with.needle", accessibilityDescription: "Gemini Gauge") {
+                let cfg = NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+                button.image = img.withSymbolConfiguration(cfg)
+            } else {
+                button.title = "⚡"
+            }
+            button.action = #selector(statusItemClicked)
+            button.target = self
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        }
+    }
+    
+    @objc func statusItemClicked() {
+        guard let event = NSApp.currentEvent else {
+            toggleWindowVisibility()
+            return
+        }
+        if event.type == .rightMouseUp {
+            let menu = NSMenu()
+            let titleItem = NSMenuItem(title: "⚡ Gemini Gauge", action: nil, keyEquivalent: "")
+            titleItem.attributedTitle = NSAttributedString(
+                string: "⚡ Gemini Gauge",
+                attributes: [.font: NSFont.systemFont(ofSize: 12, weight: .bold)]
+            )
+            menu.addItem(titleItem)
+            menu.addItem(NSMenuItem.separator())
+            menu.addItem(NSMenuItem(title: "Abrir Janela Principal", action: #selector(switchToFullMode), keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: "Modo Barra HUD", action: #selector(switchToHudMode), keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: "Configurações... (⚙️)", action: #selector(openSettings), keyEquivalent: ","))
+            menu.addItem(NSMenuItem.separator())
+            menu.addItem(NSMenuItem(title: "Atualizar Agora", action: #selector(refreshClicked), keyEquivalent: "r"))
+            menu.addItem(NSMenuItem.separator())
+            menu.addItem(NSMenuItem(title: "Encerrar Gemini Gauge", action: #selector(closeClicked), keyEquivalent: "q"))
+            for item in menu.items { item.target = self }
+            statusItem?.menu = menu
+            statusItem?.button?.performClick(nil)
+            statusItem?.menu = nil
+        } else {
+            toggleWindowVisibility()
+        }
+    }
+    
+    func toggleWindowVisibility() {
+        if currentMode == .full {
+            if let win = fullWindow, win.isVisible {
+                win.orderOut(nil)
+            } else {
+                renderCurrentMode()
+                fullWindow?.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
+        } else {
+            if let win = hudWindow, win.isVisible {
+                win.orderOut(nil)
+            } else {
+                renderCurrentMode()
+                hudWindow?.orderFront(nil)
+            }
+        }
+    }
+    
+    func updateStatusItemTitle() {
+        guard let quota = latestQuota else { return }
+        var minPct = 100
+        for g in quota.groups {
+            for b in g.buckets {
+                if b.remaining_pct < minPct { minPct = b.remaining_pct }
+            }
+        }
+        if minPct < 100 {
+            statusItem?.button?.title = " \(minPct)%"
+        } else {
+            statusItem?.button?.title = ""
         }
     }
     
@@ -467,6 +684,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 if let quota = quota {
                     self.latestQuota = quota
                     self.renderCurrentMode()
+                    self.updateStatusItemTitle()
                 }
                 self.resetRefreshBtn()
             }
@@ -497,6 +715,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     
     func renderCurrentMode() {
         guard let quota = latestQuota else { return }
+        updateStatusItemTitle()
         switch currentMode {
         case .full:
             hudWindow?.orderOut(nil)
@@ -538,124 +757,117 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let hudH: CGFloat = isVertical ? (28 + CGFloat(items.count) * 96 + 16) : 108
         
         if hudWindow == nil {
-            let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-            let initX = isVertical ? (screen.maxX - hudW - 16) : (screen.midX - hudW / 2.0)
-            let initY = isVertical ? (screen.midY - hudH / 2.0) : (screen.minY + 24)
-            let rect = NSRect(x: initX, y: initY, width: hudW, height: hudH)
-            
             let panel = NSPanel(
-                contentRect: rect,
-                styleMask: [.borderless, .nonactivatingPanel],
+                contentRect: NSRect(x: 100, y: 100, width: hudW, height: hudH),
+                styleMask: [.nonactivatingPanel, .borderless],
                 backing: .buffered,
                 defer: false
             )
             panel.isFloatingPanel = true
             panel.level = isAlwaysOnTop ? .floating : .normal
+            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             panel.isMovableByWindowBackground = true
-            panel.hasShadow = true
             panel.backgroundColor = .clear
             panel.isOpaque = false
-            panel.hidesOnDeactivate = false
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            panel.hasShadow = true
+            panel.delegate = self
             hudWindow = panel
-        } else {
-            let curFrame = hudWindow!.frame
-            let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-            let newX = max(screen.minX + 8, min(curFrame.origin.x, screen.maxX - hudW - 8))
-            let newY = max(screen.minY + 8, min(curFrame.origin.y + (curFrame.height - hudH), screen.maxY - hudH - 8))
-            hudWindow!.setFrame(NSRect(x: newX, y: newY, width: hudW, height: hudH), display: true, animate: true)
         }
         
         guard let panel = hudWindow else { return }
         
+        let currentFrame = panel.frame
+        let newX: CGFloat
+        let newY: CGFloat
+        if isFirstLaunch {
+            if let screen = NSScreen.main {
+                let screenFrame = screen.visibleFrame
+                newX = screenFrame.maxX - hudW - 20
+                newY = screenFrame.maxY - hudH - 20
+            } else {
+                newX = 100
+                newY = 100
+            }
+        } else {
+            newX = currentFrame.origin.x
+            newY = currentFrame.origin.y + (currentFrame.height - hudH)
+        }
+        
+        panel.setFrame(NSRect(x: newX, y: newY, width: hudW, height: hudH), display: true, animate: false)
+        
         let container = HudContainerView(frame: NSRect(x: 0, y: 0, width: hudW, height: hudH))
         container.delegate = self
         container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor(white: 0.08, alpha: 0.95).cgColor
+        container.layer?.backgroundColor = NSColor(srgbRed: 0x18/255.0, green: 0x18/255.0, blue: 0x18/255.0, alpha: 0.94).cgColor
         container.layer?.cornerRadius = 14
+        container.layer?.borderColor = NSColor(srgbRed: 0x2A/255.0, green: 0x2A/255.0, blue: 0x2E/255.0, alpha: 1.0).cgColor
         container.layer?.borderWidth = 1.0
-        container.layer?.borderColor = NSColor(white: 0.22, alpha: 1.0).cgColor
-        container.menu = buildHudContextMenu()
         
-        let toolColor = NSColor(white: 0.70, alpha: 1.0)
-        func createMiniBtn(symbolName: String, tooltip: String, action: Selector) -> NSButton {
-            let btn = NSButton(frame: .zero)
-            btn.isBordered = false
-            btn.target = self
-            btn.action = action
-            btn.toolTip = tooltip
-            if let sym = NSImage(systemSymbolName: symbolName, accessibilityDescription: tooltip) {
-                let cfg = NSImage.SymbolConfiguration(pointSize: 9.5, weight: .bold)
-                btn.image = sym.withSymbolConfiguration(cfg)
-                btn.contentTintColor = toolColor
+        for (idx, item) in items.enumerated() {
+            let gauge = TachometerGaugeView(item: item)
+            if isVertical {
+                let y = hudH - CGFloat(idx + 1) * 96 - 16
+                gauge.frame = NSRect(x: 8, y: y, width: 88, height: 96)
+            } else {
+                let x = 16 + CGFloat(idx) * 96
+                gauge.frame = NSRect(x: x, y: 6, width: 88, height: 96)
             }
-            return btn
+            container.addSubview(gauge)
         }
         
-        let btnClose = createMiniBtn(symbolName: "xmark", tooltip: "Fechar App", action: #selector(closeClicked))
-        let btnOrient = createMiniBtn(symbolName: isVertical ? "rectangle.portrait.and.arrow.forward" : "rectangle.and.arrow.up.right.and.arrow.down.left", tooltip: "Alternar Orientação (Vertical / Horizontal)", action: #selector(toggleHudOrientation))
-        let btnFull = createMiniBtn(symbolName: "arrow.up.left.and.arrow.down.right", tooltip: "Abrir Janela Completa (Cmd+M)", action: #selector(switchToFullMode))
-        let btnRefresh = createMiniBtn(symbolName: "arrow.clockwise", tooltip: "Atualizar Cotas (Cmd+R)", action: #selector(refreshClicked))
-        
+        let menuBtn = NSButton(title: "", target: self, action: #selector(showHudContextMenu(_:)))
+        menuBtn.isBordered = false
         if isVertical {
-            btnClose.frame = NSRect(x: 10, y: hudH - 22, width: 16, height: 16)
-            btnOrient.frame = NSRect(x: 32, y: hudH - 22, width: 16, height: 16)
-            btnFull.frame = NSRect(x: 54, y: hudH - 22, width: 16, height: 16)
-            btnRefresh.frame = NSRect(x: 76, y: hudH - 22, width: 16, height: 16)
+            menuBtn.frame = NSRect(x: (hudW - 36) / 2.0, y: 6, width: 36, height: 16)
         } else {
-            btnClose.frame = NSRect(x: 6, y: hudH - 22, width: 16, height: 16)
-            btnOrient.frame = NSRect(x: 6, y: hudH - 44, width: 16, height: 16)
-            btnFull.frame = NSRect(x: 6, y: hudH - 66, width: 16, height: 16)
-            btnRefresh.frame = NSRect(x: 6, y: hudH - 88, width: 16, height: 16)
+            menuBtn.frame = NSRect(x: hudW - 24, y: (hudH - 36) / 2.0, width: 16, height: 36)
         }
         
-        container.addSubview(btnClose)
-        container.addSubview(btnOrient)
-        container.addSubview(btnFull)
-        container.addSubview(btnRefresh)
-        
-        if isVertical {
-            var curY = hudH - 28
-            for item in items {
-                let gView = RadialGaugeView(frame: NSRect(x: 2, y: curY - 96, width: 100, height: 96), item: item)
-                container.addSubview(gView)
-                curY -= 96
-            }
-            let brand = NSTextField(labelWithString: "vh2c.com.br")
-            brand.font = NSFont.systemFont(ofSize: 8, weight: .regular)
-            brand.textColor = NSColor(white: 0.35, alpha: 1.0)
-            brand.alignment = .center
-            brand.frame = NSRect(x: 2, y: 4, width: 100, height: 12)
-            container.addSubview(brand)
-        } else {
-            var curX: CGFloat = 28
-            for item in items {
-                let gView = RadialGaugeView(frame: NSRect(x: curX, y: 6, width: 96, height: 96), item: item)
-                container.addSubview(gView)
-                curX += 96
-            }
+        if let sym = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "Opções") {
+            let cfg = NSImage.SymbolConfiguration(pointSize: 9.5, weight: .bold)
+            menuBtn.image = sym.withSymbolConfiguration(cfg)
+            menuBtn.contentTintColor = NSColor(white: 0.45, alpha: 1.0)
         }
+        container.addSubview(menuBtn)
         
         panel.contentView = container
         panel.orderFront(nil)
     }
     
-    func buildHudContextMenu() -> NSMenu {
-        let menu = NSMenu()
-        let orientTitle = hudOrientation == .vertical ? "Mudar para Horizontal (Topo/Rodapé)" : "Mudar para Vertical (Lateral)"
+    @objc func showHudContextMenu(_ sender: NSButton) {
+        let menu = buildContextMenu()
+        menu.popUp(positioning: nil, at: NSPoint(x: sender.bounds.midX, y: sender.bounds.midY), in: sender)
+    }
+    
+    func buildContextMenu() -> NSMenu {
+        let menu = NSMenu(title: "Opções Gemini Gauge")
+        
+        let titleItem = NSMenuItem(title: "⚡ Gemini Gauge", action: nil, keyEquivalent: "")
+        titleItem.attributedTitle = NSAttributedString(
+            string: "⚡ Gemini Gauge",
+            attributes: [.font: NSFont.systemFont(ofSize: 12, weight: .bold)]
+        )
+        menu.addItem(titleItem)
+        menu.addItem(NSMenuItem.separator())
+        
+        let fullItem = NSMenuItem(title: "Alternar para Modo Janela Completa", action: #selector(switchToFullMode), keyEquivalent: "m")
+        fullItem.target = self
+        menu.addItem(fullItem)
+        
+        let orientTitle = (hudOrientation == .vertical) ? "Mudar para Régua Horizontal" : "Mudar para Régua Vertical"
         let orientItem = NSMenuItem(title: orientTitle, action: #selector(toggleHudOrientation), keyEquivalent: "o")
         orientItem.target = self
         menu.addItem(orientItem)
         
-        let fullItem = NSMenuItem(title: "Abrir Janela Completa (Detalhada)", action: #selector(switchToFullMode), keyEquivalent: "m")
-        fullItem.target = self
-        menu.addItem(fullItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        let refreshItem = NSMenuItem(title: "Atualizar Cotas Agora", action: #selector(refreshClicked), keyEquivalent: "r")
+        let refreshItem = NSMenuItem(title: "Atualizar Dados Agora", action: #selector(refreshClicked), keyEquivalent: "r")
         refreshItem.target = self
         menu.addItem(refreshItem)
+        
+        let settingsItem = NSMenuItem(title: "Configurações... (⚙️)", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
+        
+        menu.addItem(NSMenuItem.separator())
         
         let pinItem = NSMenuItem(title: "Sempre no Topo (Flutuante)", action: #selector(toggleAlwaysOnTop), keyEquivalent: "p")
         pinItem.target = self
@@ -664,7 +876,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         
         menu.addItem(NSMenuItem.separator())
         
-        let closeItem = NSMenuItem(title: "Fechar Quota Hub", action: #selector(closeClicked), keyEquivalent: "q")
+        let closeItem = NSMenuItem(title: "Encerrar Gemini Gauge", action: #selector(closeClicked), keyEquivalent: "q")
         closeItem.target = self
         menu.addItem(closeItem)
         
@@ -694,7 +906,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 backing: .buffered,
                 defer: false
             )
-            win.title = "Universal AI Quota Hub"
+            win.title = "Gemini Gauge - AI Quota Monitor"
             win.isReleasedWhenClosed = false
             win.delegate = self
             win.level = .normal
@@ -748,53 +960,55 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         for g in quota.groups {
             let cardHeight = CGFloat(g.buckets.count * 48 + 14)
             
-            let provStr = g.provider != nil ? " [\(g.provider!)]" : ""
-            let groupLabel = NSTextField(labelWithString: (g.name + provStr).uppercased())
-            groupLabel.font = NSFont.systemFont(ofSize: 10, weight: .bold)
-            groupLabel.textColor = NSColor(white: 0.55, alpha: 1.0)
-            groupLabel.frame = NSRect(x: 22, y: currentY - 14, width: 416, height: 14)
-            contentView.addSubview(groupLabel)
-            currentY -= 18
-            
-            let cardView = NSView(frame: NSRect(x: 20, y: currentY - cardHeight, width: windowWidth - 40, height: cardHeight))
-            cardView.wantsLayer = true
-            cardView.layer?.backgroundColor = colorField1F.cgColor
-            cardView.layer?.cornerRadius = 8
-            cardView.layer?.borderWidth = 1
-            cardView.layer?.borderColor = colorBorder.cgColor
+            let cardView = NSBox(frame: NSRect(x: 16, y: currentY - cardHeight, width: windowWidth - 32, height: cardHeight))
+            cardView.boxType = .custom
+            cardView.fillColor = colorField1F
+            cardView.borderColor = colorBorder
+            cardView.borderWidth = 1
+            cardView.cornerRadius = 8
             contentView.addSubview(cardView)
             
-            var cardY = cardHeight - 12
+            var cardY = cardHeight - 14
             for (idx, b) in g.buckets.enumerated() {
                 if idx > 0 {
                     let sep = NSBox(frame: NSRect(x: 14, y: cardY + 6, width: cardView.frame.width - 28, height: 1))
-                    sep.boxType = .separator
-                    sep.borderColor = colorSep
+                    sep.boxType = .custom
+                    sep.fillColor = colorSep
+                    sep.borderColor = .clear
                     cardView.addSubview(sep)
                 }
                 
-                let bName = NSTextField(labelWithString: b.name)
-                bName.font = NSFont.systemFont(ofSize: 12, weight: .regular)
-                bName.textColor = .white
-                bName.frame = NSRect(x: 14, y: cardY - 18, width: 230, height: 18)
-                cardView.addSubview(bName)
+                let bTitle = NSTextField(labelWithString: b.name)
+                bTitle.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+                bTitle.textColor = .white
+                bTitle.frame = NSRect(x: 14, y: cardY - 16, width: 260, height: 16)
+                cardView.addSubview(bTitle)
                 
-                let resetStr = (b.reset_in != nil && !b.reset_in!.isEmpty) ? " • \(b.reset_in!)" : ""
-                let valText = "\(b.remaining_pct)%\(resetStr)"
-                let bVal = NSTextField(labelWithString: valText)
-                bVal.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
-                bVal.alignment = .right
+                let valStr = "\(b.remaining_pct)%"
+                let bVal = NSTextField(labelWithString: valStr)
+                bVal.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .bold)
                 
-                if b.remaining_pct > 50 {
-                    bVal.textColor = NSColor(red: 0.20, green: 0.80, blue: 0.40, alpha: 1.0)
-                } else if b.remaining_pct > 20 {
-                    bVal.textColor = NSColor(red: 1.00, green: 0.65, blue: 0.15, alpha: 1.0)
+                if b.remaining_pct >= 50 {
+                    bVal.textColor = NSColor(srgbRed: 0x00/255.0, green: 0xE6/255.0, blue: 0x99/255.0, alpha: 1.0)
+                } else if b.remaining_pct >= 20 {
+                    bVal.textColor = NSColor(srgbRed: 0xF5/255.0, green: 0xA6/255.0, blue: 0x23/255.0, alpha: 1.0)
                 } else {
-                    bVal.textColor = NSColor(red: 1.00, green: 0.30, blue: 0.30, alpha: 1.0)
+                    bVal.textColor = NSColor(srgbRed: 0xFF/255.0, green: 0x4D/255.0, blue: 0x4F/255.0, alpha: 1.0)
                 }
-                bVal.frame = NSRect(x: cardView.frame.width - 180, y: cardY - 18, width: 166, height: 18)
+                bVal.alignment = .right
+                bVal.frame = NSRect(x: cardView.frame.width - 150, y: cardY - 16, width: 136, height: 16)
                 cardView.addSubview(bVal)
+                
                 cardY -= 20
+                
+                if let reset = b.reset_in, !reset.isEmpty {
+                    let resetLabel = NSTextField(labelWithString: "Renova em \(reset)")
+                    resetLabel.font = NSFont.systemFont(ofSize: 10, weight: .regular)
+                    resetLabel.textColor = NSColor(white: 0.55, alpha: 1.0)
+                    resetLabel.alignment = .right
+                    resetLabel.frame = NSRect(x: cardView.frame.width - 160, y: cardY - 12, width: 146, height: 12)
+                    cardView.addSubview(resetLabel)
+                }
                 
                 let barBg = NSBox(frame: NSRect(x: 14, y: cardY - 6, width: cardView.frame.width - 28, height: 6))
                 barBg.boxType = .custom
@@ -823,12 +1037,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let btnBg = NSColor(srgbRed: 0xEE/255.0, green: 0xEE/255.0, blue: 0xF0/255.0, alpha: 1.0)
         let btnText = NSColor(srgbRed: 0x18/255.0, green: 0x18/255.0, blue: 0x18/255.0, alpha: 1.0)
         
+        // 1. Atualizar
         let refreshBtn = NSButton(title: "", target: self, action: #selector(refreshClicked))
         refreshBtn.isBordered = false
         refreshBtn.wantsLayer = true
         refreshBtn.layer?.backgroundColor = btnBg.cgColor
         refreshBtn.layer?.cornerRadius = 6
-        refreshBtn.frame = NSRect(x: 16, y: 12, width: 94, height: 30)
+        refreshBtn.frame = NSRect(x: 14, y: 12, width: 88, height: 30)
         refreshBtn.keyEquivalent = "r"
         refreshBtn.keyEquivalentModifierMask = .command
         refreshBtn.imagePosition = .imageLeading
@@ -837,7 +1052,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             string: "Atualizar",
             attributes: [
                 .foregroundColor: btnText,
-                .font: NSFont.systemFont(ofSize: 12, weight: .semibold)
+                .font: NSFont.systemFont(ofSize: 11.5, weight: .semibold)
             ]
         )
         if let symbol = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: "Atualizar") {
@@ -847,18 +1062,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 refreshBtn.image = symbol.withSymbolConfiguration(tinted)
             } else {
                 refreshBtn.image = symbol.withSymbolConfiguration(config)
-                refreshBtn.contentTintColor = btnText
             }
         }
         self.refreshBtn = refreshBtn
         mainView.addSubview(refreshBtn)
         
+        // 2. Modo HUD
         let hudBtn = NSButton(title: "", target: self, action: #selector(switchToHudMode))
         hudBtn.isBordered = false
         hudBtn.wantsLayer = true
         hudBtn.layer?.backgroundColor = btnBg.cgColor
         hudBtn.layer?.cornerRadius = 6
-        hudBtn.frame = NSRect(x: 118, y: 12, width: 102, height: 30)
+        hudBtn.frame = NSRect(x: 108, y: 12, width: 92, height: 30)
         hudBtn.keyEquivalent = "m"
         hudBtn.keyEquivalentModifierMask = .command
         hudBtn.imagePosition = .imageLeading
@@ -867,7 +1082,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             string: "Barra HUD",
             attributes: [
                 .foregroundColor: btnText,
-                .font: NSFont.systemFont(ofSize: 12, weight: .semibold)
+                .font: NSFont.systemFont(ofSize: 11.5, weight: .semibold)
             ]
         )
         if let symbol = NSImage(systemSymbolName: "gauge.with.needle", accessibilityDescription: "Modo HUD") {
@@ -877,36 +1092,65 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 hudBtn.image = symbol.withSymbolConfiguration(tinted)
             } else {
                 hudBtn.image = symbol.withSymbolConfiguration(config)
-                hudBtn.contentTintColor = btnText
             }
         }
         mainView.addSubview(hudBtn)
         
+        // 3. Configurações (⚙️)
+        let settingsBtn = NSButton(title: "", target: self, action: #selector(openSettings))
+        settingsBtn.isBordered = false
+        settingsBtn.wantsLayer = true
+        settingsBtn.layer?.backgroundColor = btnBg.cgColor
+        settingsBtn.layer?.cornerRadius = 6
+        settingsBtn.frame = NSRect(x: 206, y: 12, width: 94, height: 30)
+        settingsBtn.keyEquivalent = ","
+        settingsBtn.keyEquivalentModifierMask = .command
+        settingsBtn.imagePosition = .imageLeading
+        settingsBtn.imageHugsTitle = true
+        settingsBtn.attributedTitle = NSAttributedString(
+            string: "Configurar",
+            attributes: [
+                .foregroundColor: btnText,
+                .font: NSFont.systemFont(ofSize: 11.5, weight: .semibold)
+            ]
+        )
+        if let symbol = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Configurações") {
+            let config = NSImage.SymbolConfiguration(pointSize: 10, weight: .bold)
+            if #available(macOS 12.0, *) {
+                let tinted = config.applying(.init(paletteColors: [btnText]))
+                settingsBtn.image = symbol.withSymbolConfiguration(tinted)
+            } else {
+                settingsBtn.image = symbol.withSymbolConfiguration(config)
+            }
+        }
+        mainView.addSubview(settingsBtn)
+        
+        // 4. Marca / Link
         let brandBtn = NSButton(title: "", target: self, action: #selector(brandClicked))
         brandBtn.isBordered = false
-        brandBtn.frame = NSRect(x: 228, y: 17, width: 128, height: 20)
-        let brandAttr = NSAttributedString(
+        brandBtn.frame = NSRect(x: 306, y: 17, width: 74, height: 20)
+        brandBtn.attributedTitle = NSAttributedString(
             string: "vh2c.com.br",
             attributes: [
                 .foregroundColor: NSColor(white: 0.40, alpha: 1.0),
-                .font: NSFont.systemFont(ofSize: 10, weight: .regular)
+                .font: NSFont.systemFont(ofSize: 9.5, weight: .regular)
             ]
         )
-        brandBtn.attributedTitle = brandAttr
         mainView.addSubview(brandBtn)
         
+        // 5. Fechar
         let closeBtn = NSButton(title: "", target: self, action: #selector(closeClicked))
         closeBtn.isBordered = false
         closeBtn.wantsLayer = true
         closeBtn.layer?.backgroundColor = btnBg.cgColor
         closeBtn.layer?.cornerRadius = 6
-        closeBtn.frame = NSRect(x: windowWidth - 92, y: 12, width: 76, height: 30)
+        closeBtn.frame = NSRect(x: windowWidth - 70, y: 12, width: 56, height: 30)
         closeBtn.keyEquivalent = "\u{1b}"
         closeBtn.attributedTitle = NSAttributedString(
             string: "Fechar",
             attributes: [
                 .foregroundColor: btnText,
-                .font: NSFont.systemFont(ofSize: 12, weight: .semibold)
+                .font: NSFont.systemFont(ofSize: 11.5, weight: .semibold)
             ]
         )
         mainView.addSubview(closeBtn)
@@ -918,6 +1162,227 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         } else {
             window.orderFront(nil)
         }
+    }
+    
+    // MARK: - Settings Window
+    @objc func openSettings() {
+        if settingsWindow == nil {
+            let w: CGFloat = 460
+            let h: CGFloat = 530
+            let win = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: w, height: h),
+                styleMask: [.titled, .closable],
+                backing: .buffered,
+                defer: false
+            )
+            win.title = "Configurações - Gemini Gauge"
+            win.backgroundColor = NSColor(srgbRed: 0x18/255.0, green: 0x18/255.0, blue: 0x18/255.0, alpha: 1.0)
+            win.isReleasedWhenClosed = false
+            win.center()
+            settingsWindow = win
+        }
+        
+        guard let win = settingsWindow else { return }
+        setupSettingsUI(in: win)
+        win.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+    
+    func setupSettingsUI(in win: NSWindow) {
+        let cfg = QuotaManager.loadConfig()
+        let providers = cfg.providers ?? [:]
+        
+        let colorBg18 = NSColor(srgbRed: 0x18/255.0, green: 0x18/255.0, blue: 0x18/255.0, alpha: 1.0)
+        let colorField1F = NSColor(srgbRed: 0x1F/255.0, green: 0x1F/255.0, blue: 0x1F/255.0, alpha: 1.0)
+        let colorBorder = NSColor(srgbRed: 0x33/255.0, green: 0x33/255.0, blue: 0x33/255.0, alpha: 1.0)
+        
+        let view = NSView(frame: win.contentView!.bounds)
+        view.wantsLayer = true
+        view.layer?.backgroundColor = colorBg18.cgColor
+        win.contentView = view
+        
+        var y: CGFloat = win.frame.height - 42
+        
+        // Header
+        let titleLabel = NSTextField(labelWithString: "⚙️ Provedores de IA & Modelos")
+        titleLabel.font = NSFont.systemFont(ofSize: 15, weight: .bold)
+        titleLabel.textColor = .white
+        titleLabel.frame = NSRect(x: 20, y: y, width: 420, height: 20)
+        view.addSubview(titleLabel)
+        y -= 20
+        
+        let subLabel = NSTextField(labelWithString: "Configure as fontes de dados para monitoramento das suas cotas:")
+        subLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+        subLabel.textColor = NSColor(white: 0.65, alpha: 1.0)
+        subLabel.frame = NSRect(x: 20, y: y, width: 420, height: 16)
+        view.addSubview(subLabel)
+        y -= 30
+        
+        // 1. Google Gemini API
+        let geminiCfg = providers["gemini"]
+        let geminiBtn = NSButton(checkboxWithTitle: " Google Gemini API (Google AI Studio)", target: nil, action: nil)
+        geminiBtn.font = NSFont.systemFont(ofSize: 12.5, weight: .semibold)
+        geminiBtn.state = (geminiCfg?.enabled ?? false) ? .on : .off
+        geminiBtn.frame = NSRect(x: 20, y: y, width: 420, height: 20)
+        view.addSubview(geminiBtn)
+        self.geminiCheck = geminiBtn
+        y -= 26
+        
+        let geminiField = NSTextField(frame: NSRect(x: 24, y: y, width: 412, height: 24))
+        geminiField.placeholderString = "Chave de API Gemini (AIzaSy...)"
+        geminiField.stringValue = geminiCfg?.api_key ?? ""
+        geminiField.backgroundColor = colorField1F
+        geminiField.textColor = .white
+        geminiField.wantsLayer = true
+        geminiField.layer?.borderColor = colorBorder.cgColor
+        geminiField.layer?.borderWidth = 1
+        geminiField.layer?.cornerRadius = 4
+        view.addSubview(geminiField)
+        self.geminiKeyField = geminiField
+        y -= 22
+        
+        let geminiLink = NSButton(title: "Obter Chave Gratuita no Google AI Studio ↗", target: self, action: #selector(openAiStudioLink))
+        geminiLink.isBordered = false
+        geminiLink.frame = NSRect(x: 20, y: y, width: 280, height: 18)
+        geminiLink.attributedTitle = NSAttributedString(
+            string: "Obter Chave Gratuita no Google AI Studio ↗",
+            attributes: [
+                .foregroundColor: NSColor(srgbRed: 0x38/255.0, green: 0xBD/255.0, blue: 0xF8/255.0, alpha: 1.0),
+                .font: NSFont.systemFont(ofSize: 10.5, weight: .regular)
+            ]
+        )
+        view.addSubview(geminiLink)
+        y -= 34
+        
+        // 2. Antigravity (Live & Headless)
+        let antiCfg = providers["antigravity"]
+        let antiBtn = NSButton(checkboxWithTitle: " Antigravity IDE (Live & Headless Standalone)", target: nil, action: nil)
+        antiBtn.font = NSFont.systemFont(ofSize: 12.5, weight: .semibold)
+        antiBtn.state = (antiCfg?.enabled ?? true) ? .on : .off
+        antiBtn.frame = NSRect(x: 20, y: y, width: 420, height: 20)
+        view.addSubview(antiBtn)
+        self.antigravityCheck = antiBtn
+        y -= 18
+        
+        let antiDesc = NSTextField(labelWithString: "Detecta cotas do IDE em execução ou via sonda headless quando fechado.")
+        antiDesc.font = NSFont.systemFont(ofSize: 10, weight: .regular)
+        antiDesc.textColor = NSColor(white: 0.55, alpha: 1.0)
+        antiDesc.frame = NSRect(x: 40, y: y, width: 390, height: 14)
+        view.addSubview(antiDesc)
+        y -= 32
+        
+        // 3. OpenAI
+        let openCfg = providers["openai"]
+        let openBtn = NSButton(checkboxWithTitle: " OpenAI API (GPT-4o, o1, etc.)", target: nil, action: nil)
+        openBtn.font = NSFont.systemFont(ofSize: 12.5, weight: .semibold)
+        openBtn.state = (openCfg?.enabled ?? false) ? .on : .off
+        openBtn.frame = NSRect(x: 20, y: y, width: 420, height: 20)
+        view.addSubview(openBtn)
+        self.openaiCheck = openBtn
+        y -= 26
+        
+        let openField = NSTextField(frame: NSRect(x: 24, y: y, width: 412, height: 24))
+        openField.placeholderString = "Chave de API OpenAI (sk-...)"
+        openField.stringValue = openCfg?.api_key ?? ""
+        openField.backgroundColor = colorField1F
+        openField.textColor = .white
+        openField.wantsLayer = true
+        openField.layer?.borderColor = colorBorder.cgColor
+        openField.layer?.borderWidth = 1
+        openField.layer?.cornerRadius = 4
+        view.addSubview(openField)
+        self.openaiKeyField = openField
+        y -= 32
+        
+        // 4. Anthropic Claude
+        let antCfg = providers["anthropic"]
+        let antBtn = NSButton(checkboxWithTitle: " Anthropic Claude API (Sonnet, Opus)", target: nil, action: nil)
+        antBtn.font = NSFont.systemFont(ofSize: 12.5, weight: .semibold)
+        antBtn.state = (antCfg?.enabled ?? false) ? .on : .off
+        antBtn.frame = NSRect(x: 20, y: y, width: 420, height: 20)
+        view.addSubview(antBtn)
+        self.anthropicCheck = antBtn
+        y -= 26
+        
+        let antField = NSTextField(frame: NSRect(x: 24, y: y, width: 412, height: 24))
+        antField.placeholderString = "Chave de API Anthropic (sk-ant-...)"
+        antField.stringValue = antCfg?.api_key ?? ""
+        antField.backgroundColor = colorField1F
+        antField.textColor = .white
+        antField.wantsLayer = true
+        antField.layer?.borderColor = colorBorder.cgColor
+        antField.layer?.borderWidth = 1
+        antField.layer?.cornerRadius = 4
+        view.addSubview(antField)
+        self.anthropicKeyField = antField
+        y -= 45
+        
+        // Buttons
+        let saveBtn = NSButton(title: "Salvar e Atualizar", target: self, action: #selector(saveSettingsClicked))
+        saveBtn.isBordered = false
+        saveBtn.wantsLayer = true
+        saveBtn.layer?.backgroundColor = NSColor(srgbRed: 0xEE/255.0, green: 0xEE/255.0, blue: 0xF0/255.0, alpha: 1.0).cgColor
+        saveBtn.layer?.cornerRadius = 6
+        saveBtn.frame = NSRect(x: 20, y: 16, width: 140, height: 32)
+        saveBtn.attributedTitle = NSAttributedString(
+            string: "Salvar e Atualizar",
+            attributes: [
+                .foregroundColor: NSColor(srgbRed: 0x18/255.0, green: 0x18/255.0, blue: 0x18/255.0, alpha: 1.0),
+                .font: NSFont.systemFont(ofSize: 12, weight: .semibold)
+            ]
+        )
+        view.addSubview(saveBtn)
+        
+        let cancelBtn = NSButton(title: "Cancelar", target: self, action: #selector(cancelSettingsClicked))
+        cancelBtn.isBordered = false
+        cancelBtn.wantsLayer = true
+        cancelBtn.layer?.backgroundColor = NSColor(white: 0.25, alpha: 1.0).cgColor
+        cancelBtn.layer?.cornerRadius = 6
+        cancelBtn.frame = NSRect(x: 170, y: 16, width: 90, height: 32)
+        cancelBtn.attributedTitle = NSAttributedString(
+            string: "Cancelar",
+            attributes: [
+                .foregroundColor: NSColor.white,
+                .font: NSFont.systemFont(ofSize: 12, weight: .medium)
+            ]
+        )
+        view.addSubview(cancelBtn)
+    }
+    
+    @objc func openAiStudioLink() {
+        if let url = URL(string: "https://aistudio.google.com/app/apikey") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+    
+    @objc func saveSettingsClicked() {
+        var cfg = QuotaManager.loadConfig()
+        if cfg.providers == nil { cfg.providers = [:] }
+        
+        cfg.providers?["gemini"] = ProviderConfig(
+            enabled: geminiCheck?.state == .on,
+            api_key: geminiKeyField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        )
+        cfg.providers?["antigravity"] = ProviderConfig(
+            enabled: antigravityCheck?.state == .on,
+            api_key: nil
+        )
+        cfg.providers?["openai"] = ProviderConfig(
+            enabled: openaiCheck?.state == .on,
+            api_key: openaiKeyField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        )
+        cfg.providers?["anthropic"] = ProviderConfig(
+            enabled: anthropicCheck?.state == .on,
+            api_key: anthropicKeyField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        )
+        
+        QuotaManager.saveConfig(cfg)
+        settingsWindow?.orderOut(nil)
+        performRefresh(animated: true)
+    }
+    
+    @objc func cancelSettingsClicked() {
+        settingsWindow?.orderOut(nil)
     }
     
     @objc func brandClicked() {
@@ -933,14 +1398,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     
     func windowWillClose(_ notification: Notification) {
-        autoRefreshTimer?.invalidate()
-        autoRefreshTimer = nil
-        NSApp.terminate(nil)
+        // Red X closes the window but keeps the app alive in status bar
     }
 }
 
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
-app.setActivationPolicy(.accessory)
+app.setActivationPolicy(.regular)
 app.run()

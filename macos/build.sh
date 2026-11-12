@@ -3,17 +3,21 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-APP_BUNDLE="${SCRIPT_DIR}/Universal AI Quota.app"
+APP_BUNDLE="${SCRIPT_DIR}/Gemini Gauge.app"
 BIN_DIR="${APP_BUNDLE}/Contents/MacOS"
 RES_DIR="${APP_BUNDLE}/Contents/Resources"
 
 mkdir -p "${BIN_DIR}" "${RES_DIR}/core"
 
-echo "🔨 Compiling Swift binary..."
-swiftc -O -target arm64-apple-macos11.0 "${SCRIPT_DIR}/src/QuotaHubApp.swift" -o "${BIN_DIR}/UniversalAIQuota"
+echo "🔨 Compiling Swift binary for Gemini Gauge..."
+swiftc -O -target arm64-apple-macos11.0 "${SCRIPT_DIR}/src/QuotaHubApp.swift" -o "${BIN_DIR}/GeminiGauge"
 
-echo "📦 Bundling core engine..."
+echo "📦 Bundling core engine & assets..."
 cp -r "${REPO_DIR}/core/"* "${RES_DIR}/core/"
+
+if [ -f "${REPO_DIR}/assets/AppIcon.icns" ]; then
+    cp "${REPO_DIR}/assets/AppIcon.icns" "${RES_DIR}/AppIcon.icns"
+fi
 
 cat << 'PLIST' > "${APP_BUNDLE}/Contents/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
@@ -21,18 +25,20 @@ cat << 'PLIST' > "${APP_BUNDLE}/Contents/Info.plist"
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>Universal AI Quota</string>
+    <string>Gemini Gauge</string>
     <key>CFBundleDisplayName</key>
-    <string>Universal AI Quota</string>
+    <string>Gemini Gauge</string>
     <key>CFBundleIdentifier</key>
-    <string>br.com.vh2c.universal-ai-quota</string>
+    <string>br.com.vh2c.gemini-gauge</string>
     <key>CFBundleVersion</key>
     <string>1.0.0</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>
-    <string>UniversalAIQuota</string>
-    <key>LSUIElement</key>
+    <string>GeminiGauge</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>NSHighResolutionCapable</key>
     <true/>
 </dict>
 </plist>
