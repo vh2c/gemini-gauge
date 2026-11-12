@@ -57,12 +57,27 @@ def save_config(cfg):
         print(f"Erro ao salvar configurações: {e}")
 
 def find_node():
+    # 1. Check local app embedded/portable node
+    local_nodes = [
+        APP_DIR / "bin" / "node",
+        APP_DIR.parent / "bin" / "node",
+        Path.home() / ".local" / "share" / "universal-ai-quota" / "bin" / "node"
+    ]
+    for ln in local_nodes:
+        if ln.exists() and os.access(ln, os.X_OK):
+            return str(ln)
+
+    # 2. Check standard system locations
     for p in ["/usr/bin/node", "/usr/local/bin/node", "/opt/homebrew/bin/node", "/bin/node"]:
         if os.path.isfile(p) and os.access(p, os.X_OK):
             return p
+
+    # 3. Check NVM installations
     nvm_nodes = sorted(glob.glob(os.path.expanduser("~/.nvm/versions/node/*/bin/node")), reverse=True)
     if nvm_nodes:
         return nvm_nodes[0]
+
+    # 4. Fallback to PATH
     return "node"
 
 def load_quota(force=False):
