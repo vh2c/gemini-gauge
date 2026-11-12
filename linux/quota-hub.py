@@ -190,8 +190,24 @@ except ImportError:
 class QuotaHubAppLinux:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("Universal AI Quota Hub")
+        self.root.title("Gemini Gauge - AI Quota Monitor")
         self.root.configure(bg="#181818")
+
+        # Load App Icon
+        icon_candidates = [
+            APP_DIR / "icon.png",
+            REPO_ROOT / "assets" / "icon.png",
+            Path.home() / ".local" / "share" / "universal-ai-quota" / "icon.png"
+        ]
+        self._icon_img = None
+        for ic in icon_candidates:
+            if ic.exists():
+                try:
+                    self._icon_img = tk.PhotoImage(file=str(ic))
+                    self.root.iconphoto(True, self._icon_img)
+                    break
+                except Exception:
+                    pass
 
         self.prefs = {}
         if PREFS_FILE.exists():

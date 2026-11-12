@@ -22,8 +22,9 @@ fi
 TARGET_DIR="${HOME}/.local/share/universal-ai-quota"
 BIN_DIR="${HOME}/.local/bin"
 APP_DIR="${HOME}/.local/share/applications"
+ICON_DIR="${HOME}/.local/share/icons/hicolor/512x512/apps"
 
-mkdir -p "${TARGET_DIR}" "${BIN_DIR}" "${APP_DIR}"
+mkdir -p "${TARGET_DIR}" "${BIN_DIR}" "${APP_DIR}" "${ICON_DIR}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -31,11 +32,19 @@ REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cp -r "${REPO_DIR}/core" "${TARGET_DIR}/"
 cp "${SCRIPT_DIR}/quota-hub.py" "${TARGET_DIR}/"
 cp "${SCRIPT_DIR}/quota-hub" "${TARGET_DIR}/"
+if [ -f "${SCRIPT_DIR}/icon.png" ]; then
+    cp "${SCRIPT_DIR}/icon.png" "${TARGET_DIR}/icon.png"
+    cp "${SCRIPT_DIR}/icon.png" "${ICON_DIR}/quota-hub.png"
+elif [ -f "${REPO_DIR}/assets/icon.png" ]; then
+    cp "${REPO_DIR}/assets/icon.png" "${TARGET_DIR}/icon.png"
+    cp "${REPO_DIR}/assets/icon.png" "${ICON_DIR}/quota-hub.png"
+fi
 chmod +x "${TARGET_DIR}/quota-hub" "${TARGET_DIR}/quota-hub.py"
 
 ln -sf "${TARGET_DIR}/quota-hub" "${BIN_DIR}/quota-hub"
 
 sed -e "s|^Exec=.*|Exec=${BIN_DIR}/quota-hub|" \
+    -e "s|^Icon=.*|Icon=${TARGET_DIR}/icon.png|" \
     "${SCRIPT_DIR}/quota-hub.desktop" > "${APP_DIR}/quota-hub.desktop"
 chmod +x "${APP_DIR}/quota-hub.desktop"
 
