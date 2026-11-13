@@ -540,6 +540,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // Settings fields
     var geminiCheck: NSButton?
     var geminiKeyField: NSTextField?
+    var geminiTestBtn: NSButton?
+    var geminiStatusLabel: NSTextField?
     var antigravityCheck: NSButton?
     var openaiCheck: NSButton?
     var openaiKeyField: NSTextField?
@@ -798,8 +800,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let items = quota.gaugeItems
         let isVertical = (hudOrientation == .vertical)
         
-        let hudW: CGFloat = isVertical ? 108 : (24 + CGFloat(items.count) * 96 + 36)
-        let hudH: CGFloat = isVertical ? (32 + CGFloat(items.count) * 96 + 26) : 116
+        let hudW: CGFloat
+        let hudH: CGFloat
+        if items.isEmpty {
+            hudW = isVertical ? 120 : 260
+            hudH = isVertical ? 175 : 100
+        } else {
+            hudW = isVertical ? 108 : (24 + CGFloat(items.count) * 96 + 36)
+            hudH = isVertical ? (32 + CGFloat(items.count) * 96 + 26) : 116
+        }
         
         if hudWindow == nil {
             let panel = NSPanel(
@@ -885,11 +894,49 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
             container.addSubview(closeBtn)
             
-            for (idx, item) in items.enumerated() {
-                let gauge = TachometerGaugeView(item: item)
-                let y = hudH - 28 - CGFloat(idx + 1) * 96
-                gauge.frame = NSRect(x: 10, y: y, width: 88, height: 96)
-                container.addSubview(gauge)
+            if items.isEmpty {
+                // Empty state vertical
+                let iconLabel = NSTextField(labelWithString: "📡")
+                iconLabel.font = NSFont.systemFont(ofSize: 22)
+                iconLabel.alignment = .center
+                iconLabel.frame = NSRect(x: 10, y: hudH - 58, width: hudW - 20, height: 26)
+                container.addSubview(iconLabel)
+                
+                let emptyTitle = NSTextField(labelWithString: "Sem Cotas")
+                emptyTitle.font = NSFont.systemFont(ofSize: 11.5, weight: .bold)
+                emptyTitle.textColor = .white
+                emptyTitle.alignment = .center
+                emptyTitle.frame = NSRect(x: 4, y: hudH - 80, width: hudW - 8, height: 16)
+                container.addSubview(emptyTitle)
+                
+                let emptySub = NSTextField(labelWithString: "Abra o IDE ou\ninsira API Key")
+                emptySub.font = NSFont.systemFont(ofSize: 9, weight: .regular)
+                emptySub.textColor = NSColor(white: 0.60, alpha: 1.0)
+                emptySub.alignment = .center
+                emptySub.frame = NSRect(x: 4, y: hudH - 116, width: hudW - 8, height: 28)
+                container.addSubview(emptySub)
+                
+                let cfgBtn = NSButton(title: "Configurar", target: self, action: #selector(openSettings))
+                cfgBtn.isBordered = false
+                cfgBtn.wantsLayer = true
+                cfgBtn.layer?.backgroundColor = NSColor(srgbRed: 0x24/255.0, green: 0x24/255.0, blue: 0x28/255.0, alpha: 1.0).cgColor
+                cfgBtn.layer?.cornerRadius = 5
+                cfgBtn.frame = NSRect(x: 12, y: 26, width: hudW - 24, height: 22)
+                cfgBtn.attributedTitle = NSAttributedString(
+                    string: "⚙️ Configurar",
+                    attributes: [
+                        .foregroundColor: NSColor(srgbRed: 0x00/255.0, green: 0xE6/255.0, blue: 0x99/255.0, alpha: 1.0),
+                        .font: NSFont.systemFont(ofSize: 9.5, weight: .semibold)
+                    ]
+                )
+                container.addSubview(cfgBtn)
+            } else {
+                for (idx, item) in items.enumerated() {
+                    let gauge = TachometerGaugeView(item: item)
+                    let y = hudH - 28 - CGFloat(idx + 1) * 96
+                    gauge.frame = NSRect(x: 10, y: y, width: 88, height: 96)
+                    container.addSubview(gauge)
+                }
             }
             
             let brandBtn = NSButton(title: "", target: self, action: #selector(brandClicked))
@@ -905,11 +952,41 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             container.addSubview(brandBtn)
         } else {
             // Horizontal HUD
-            for (idx, item) in items.enumerated() {
-                let gauge = TachometerGaugeView(item: item)
-                let x = 12 + CGFloat(idx) * 96
-                gauge.frame = NSRect(x: x, y: 14, width: 88, height: 96)
-                container.addSubview(gauge)
+            if items.isEmpty {
+                // Empty state horizontal
+                let msgLabel = NSTextField(labelWithString: "📡 Sem cotas ativas no momento")
+                msgLabel.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+                msgLabel.textColor = .white
+                msgLabel.frame = NSRect(x: 14, y: hudH - 36, width: hudW - 60, height: 16)
+                container.addSubview(msgLabel)
+                
+                let subLabel = NSTextField(labelWithString: "Abra o Antigravity IDE ou adicione uma chave de API")
+                subLabel.font = NSFont.systemFont(ofSize: 9.5, weight: .regular)
+                subLabel.textColor = NSColor(white: 0.60, alpha: 1.0)
+                subLabel.frame = NSRect(x: 14, y: hudH - 56, width: hudW - 60, height: 14)
+                container.addSubview(subLabel)
+                
+                let cfgBtn = NSButton(title: "Configurar Provedores", target: self, action: #selector(openSettings))
+                cfgBtn.isBordered = false
+                cfgBtn.wantsLayer = true
+                cfgBtn.layer?.backgroundColor = NSColor(srgbRed: 0x24/255.0, green: 0x24/255.0, blue: 0x28/255.0, alpha: 1.0).cgColor
+                cfgBtn.layer?.cornerRadius = 5
+                cfgBtn.frame = NSRect(x: 14, y: 16, width: 140, height: 22)
+                cfgBtn.attributedTitle = NSAttributedString(
+                    string: "⚙️ Configurar Provedores",
+                    attributes: [
+                        .foregroundColor: NSColor(srgbRed: 0x00/255.0, green: 0xE6/255.0, blue: 0x99/255.0, alpha: 1.0),
+                        .font: NSFont.systemFont(ofSize: 10, weight: .semibold)
+                    ]
+                )
+                container.addSubview(cfgBtn)
+            } else {
+                for (idx, item) in items.enumerated() {
+                    let gauge = TachometerGaugeView(item: item)
+                    let x = 12 + CGFloat(idx) * 96
+                    gauge.frame = NSRect(x: x, y: 14, width: 88, height: 96)
+                    container.addSubview(gauge)
+                }
             }
             
             let colX = hudW - 30
@@ -1033,7 +1110,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             totalCardsHeight += 32 + CGFloat(g.buckets.count * 48 + 14)
         }
         let footerHeight: CGFloat = 66
-        let contentHeight: CGFloat = 65 + totalCardsHeight + 10
+        let contentHeight: CGFloat
+        if quota.groups.isEmpty {
+            contentHeight = 160
+        } else {
+            contentHeight = 65 + totalCardsHeight + 10
+        }
         let windowHeight = min(contentHeight + footerHeight + 10, 720)
         
         if fullWindow == nil {
@@ -1095,7 +1177,46 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         currentY -= 24
         
         // Cards por Provedor / Grupo
-        for g in quota.groups {
+        if quota.groups.isEmpty {
+            let emptyHeight: CGFloat = 110
+            let cardView = NSBox(frame: NSRect(x: 16, y: currentY - emptyHeight, width: windowWidth - 32, height: emptyHeight))
+            cardView.boxType = .custom
+            cardView.fillColor = colorField1F
+            cardView.borderColor = colorBorder
+            cardView.borderWidth = 1
+            cardView.cornerRadius = 8
+            contentView.addSubview(cardView)
+            
+            let eTitle = NSTextField(labelWithString: "📡 Nenhum Provedor Ativo")
+            eTitle.font = NSFont.systemFont(ofSize: 13, weight: .bold)
+            eTitle.textColor = .white
+            eTitle.frame = NSRect(x: 16, y: 74, width: cardView.frame.width - 32, height: 18)
+            cardView.addSubview(eTitle)
+            
+            let eDesc = NSTextField(labelWithString: "O Antigravity IDE está fechado e nenhuma chave de API adicional (Gemini, OpenAI, Claude) foi configurada.")
+            eDesc.font = NSFont.systemFont(ofSize: 11, weight: .regular)
+            eDesc.textColor = NSColor(white: 0.65, alpha: 1.0)
+            eDesc.lineBreakMode = .byWordWrapping
+            eDesc.frame = NSRect(x: 16, y: 38, width: cardView.frame.width - 32, height: 32)
+            cardView.addSubview(eDesc)
+            
+            let openCfgBtn = NSButton(title: "Configurar Provedores", target: self, action: #selector(openSettings))
+            openCfgBtn.isBordered = false
+            openCfgBtn.wantsLayer = true
+            openCfgBtn.layer?.backgroundColor = NSColor(srgbRed: 0x2A/255.0, green: 0x2A/255.0, blue: 0x2E/255.0, alpha: 1.0).cgColor
+            openCfgBtn.layer?.cornerRadius = 5
+            openCfgBtn.frame = NSRect(x: 16, y: 10, width: 170, height: 22)
+            openCfgBtn.attributedTitle = NSAttributedString(
+                string: "⚙️ Configurar Provedores",
+                attributes: [
+                    .foregroundColor: NSColor(srgbRed: 0x00/255.0, green: 0xE6/255.0, blue: 0x99/255.0, alpha: 1.0),
+                    .font: NSFont.systemFont(ofSize: 10.5, weight: .semibold)
+                ]
+            )
+            cardView.addSubview(openCfgBtn)
+            currentY -= (emptyHeight + 12)
+        } else {
+            for g in quota.groups {
             let cardHeight = CGFloat(g.buckets.count * 48 + 14)
             
             let cardView = NSBox(frame: NSRect(x: 16, y: currentY - cardHeight, width: windowWidth - 32, height: cardHeight))
@@ -1167,6 +1288,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
             
             currentY -= (cardHeight + 12)
+        }
         }
         
         scrollView.documentView = contentView
@@ -1324,8 +1446,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // MARK: - Settings Window
     @objc func openSettings() {
         if settingsWindow == nil {
-            let w: CGFloat = 460
-            let h: CGFloat = 530
+            let w: CGFloat = 480
+            let h: CGFloat = 580
             let win = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: w, height: h),
                 styleMask: [.titled, .closable],
@@ -1350,142 +1472,241 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let providers = cfg.providers ?? [:]
         
         let colorBg18 = NSColor(srgbRed: 0x18/255.0, green: 0x18/255.0, blue: 0x18/255.0, alpha: 1.0)
-        let colorField1F = NSColor(srgbRed: 0x1F/255.0, green: 0x1F/255.0, blue: 0x1F/255.0, alpha: 1.0)
-        let colorBorder = NSColor(srgbRed: 0x33/255.0, green: 0x33/255.0, blue: 0x33/255.0, alpha: 1.0)
+        let colorField1F = NSColor(srgbRed: 0x14/255.0, green: 0x14/255.0, blue: 0x16/255.0, alpha: 1.0)
+        let colorCard = NSColor(srgbRed: 0x1E/255.0, green: 0x1E/255.0, blue: 0x22/255.0, alpha: 1.0)
+        let colorBorder = NSColor(srgbRed: 0x2E/255.0, green: 0x2E/255.0, blue: 0x33/255.0, alpha: 1.0)
         
         let view = NSView(frame: win.contentView!.bounds)
         view.wantsLayer = true
         view.layer?.backgroundColor = colorBg18.cgColor
         win.contentView = view
         
-        var y: CGFloat = win.frame.height - 42
+        let contentH = win.contentView!.bounds.height
+        let contentW = win.contentView!.bounds.width
+        var y: CGFloat = contentH - 34
         
         // Header
         let titleLabel = NSTextField(labelWithString: "⚙️ Provedores de IA & Modelos")
-        titleLabel.font = NSFont.systemFont(ofSize: 15, weight: .bold)
+        titleLabel.font = NSFont.systemFont(ofSize: 15.5, weight: .bold)
         titleLabel.textColor = .white
-        titleLabel.frame = NSRect(x: 20, y: y, width: 420, height: 20)
+        titleLabel.frame = NSRect(x: 20, y: y, width: contentW - 40, height: 22)
         view.addSubview(titleLabel)
-        y -= 20
+        y -= 22
         
         let subLabel = NSTextField(labelWithString: "Configure as fontes de dados para monitoramento das suas cotas:")
         subLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
         subLabel.textColor = NSColor(white: 0.65, alpha: 1.0)
-        subLabel.frame = NSRect(x: 20, y: y, width: 420, height: 16)
+        subLabel.frame = NSRect(x: 20, y: y, width: contentW - 40, height: 16)
         view.addSubview(subLabel)
-        y -= 30
+        y -= 28
         
-        // 1. Google Gemini API
+        // 1. Google Gemini API Card
+        let geminiCardH: CGFloat = 136
+        let geminiCard = NSBox(frame: NSRect(x: 18, y: y - geminiCardH, width: contentW - 36, height: geminiCardH))
+        geminiCard.boxType = .custom
+        geminiCard.fillColor = colorCard
+        geminiCard.borderColor = colorBorder
+        geminiCard.borderWidth = 1
+        geminiCard.cornerRadius = 8
+        view.addSubview(geminiCard)
+        
         let geminiCfg = providers["gemini"]
-        let geminiBtn = NSButton(checkboxWithTitle: " Google Gemini API (Google AI Studio)", target: nil, action: nil)
-        geminiBtn.font = NSFont.systemFont(ofSize: 12.5, weight: .semibold)
+        let geminiBtn = NSButton(checkboxWithTitle: "", target: nil, action: nil)
         geminiBtn.state = (geminiCfg?.enabled ?? false) ? .on : .off
-        geminiBtn.frame = NSRect(x: 20, y: y, width: 420, height: 20)
-        view.addSubview(geminiBtn)
+        geminiBtn.attributedTitle = NSAttributedString(
+            string: "  Google Gemini API (Google AI Studio)",
+            attributes: [
+                .foregroundColor: NSColor.white,
+                .font: NSFont.systemFont(ofSize: 12.5, weight: .semibold)
+            ]
+        )
+        geminiBtn.frame = NSRect(x: 14, y: geminiCardH - 30, width: 380, height: 20)
+        geminiCard.addSubview(geminiBtn)
         self.geminiCheck = geminiBtn
-        y -= 26
         
-        let geminiField = NSTextField(frame: NSRect(x: 24, y: y, width: 412, height: 24))
+        let geminiHint = NSTextField(labelWithString: "💡 Chaves do Google AI Studio começam com AIzaSy...")
+        geminiHint.font = NSFont.systemFont(ofSize: 10, weight: .regular)
+        geminiHint.textColor = NSColor(white: 0.55, alpha: 1.0)
+        geminiHint.frame = NSRect(x: 36, y: geminiCardH - 48, width: 360, height: 14)
+        geminiCard.addSubview(geminiHint)
+        
+        let fieldW: CGFloat = geminiCard.frame.width - 28 - 90
+        let geminiField = NSTextField(frame: NSRect(x: 14, y: geminiCardH - 80, width: fieldW, height: 26))
         geminiField.placeholderString = "Chave de API Gemini (AIzaSy...)"
         geminiField.stringValue = geminiCfg?.api_key ?? ""
+        geminiField.isBordered = false
+        geminiField.focusRingType = .none
         geminiField.backgroundColor = colorField1F
         geminiField.textColor = .white
+        geminiField.font = NSFont.systemFont(ofSize: 11.5)
         geminiField.wantsLayer = true
         geminiField.layer?.borderColor = colorBorder.cgColor
         geminiField.layer?.borderWidth = 1
-        geminiField.layer?.cornerRadius = 4
-        view.addSubview(geminiField)
+        geminiField.layer?.cornerRadius = 5
+        geminiCard.addSubview(geminiField)
         self.geminiKeyField = geminiField
-        y -= 22
+        
+        let testBtn = NSButton(title: "Testar", target: self, action: #selector(testGeminiKeyClicked))
+        testBtn.isBordered = false
+        testBtn.wantsLayer = true
+        testBtn.layer?.backgroundColor = NSColor(srgbRed: 0x2A/255.0, green: 0x2A/255.0, blue: 0x30/255.0, alpha: 1.0).cgColor
+        testBtn.layer?.cornerRadius = 5
+        testBtn.frame = NSRect(x: 14 + fieldW + 8, y: geminiCardH - 80, width: 82, height: 26)
+        testBtn.attributedTitle = NSAttributedString(
+            string: "Testar",
+            attributes: [
+                .foregroundColor: NSColor.white,
+                .font: NSFont.systemFont(ofSize: 11, weight: .semibold)
+            ]
+        )
+        geminiCard.addSubview(testBtn)
+        self.geminiTestBtn = testBtn
+        
+        let statusLabel = NSTextField(labelWithString: "")
+        statusLabel.font = NSFont.systemFont(ofSize: 10, weight: .medium)
+        statusLabel.textColor = NSColor(white: 0.60, alpha: 1.0)
+        statusLabel.frame = NSRect(x: 14, y: geminiCardH - 104, width: 380, height: 16)
+        geminiCard.addSubview(statusLabel)
+        self.geminiStatusLabel = statusLabel
         
         let geminiLink = NSButton(title: "Obter Chave Gratuita no Google AI Studio ↗", target: self, action: #selector(openAiStudioLink))
         geminiLink.isBordered = false
-        geminiLink.frame = NSRect(x: 20, y: y, width: 280, height: 18)
+        geminiLink.frame = NSRect(x: 14, y: 8, width: 360, height: 18)
         geminiLink.attributedTitle = NSAttributedString(
-            string: "Obter Chave Gratuita no Google AI Studio ↗",
+            string: "Obter Chave Gratuita no Google AI Studio (aistudio.google.com) ↗",
             attributes: [
                 .foregroundColor: NSColor(srgbRed: 0x38/255.0, green: 0xBD/255.0, blue: 0xF8/255.0, alpha: 1.0),
-                .font: NSFont.systemFont(ofSize: 10.5, weight: .regular)
+                .font: NSFont.systemFont(ofSize: 10, weight: .regular)
             ]
         )
-        view.addSubview(geminiLink)
-        y -= 34
+        geminiCard.addSubview(geminiLink)
         
-        // 2. Antigravity (Live & Headless)
+        y -= (geminiCardH + 12)
+        
+        // 2. Antigravity Card
+        let antiCardH: CGFloat = 66
+        let antiCard = NSBox(frame: NSRect(x: 18, y: y - antiCardH, width: contentW - 36, height: antiCardH))
+        antiCard.boxType = .custom
+        antiCard.fillColor = colorCard
+        antiCard.borderColor = colorBorder
+        antiCard.borderWidth = 1
+        antiCard.cornerRadius = 8
+        view.addSubview(antiCard)
+        
         let antiCfg = providers["antigravity"]
-        let antiBtn = NSButton(checkboxWithTitle: " Antigravity IDE (Live & Headless Standalone)", target: nil, action: nil)
-        antiBtn.font = NSFont.systemFont(ofSize: 12.5, weight: .semibold)
+        let antiBtn = NSButton(checkboxWithTitle: "", target: nil, action: nil)
         antiBtn.state = (antiCfg?.enabled ?? true) ? .on : .off
-        antiBtn.frame = NSRect(x: 20, y: y, width: 420, height: 20)
-        view.addSubview(antiBtn)
+        antiBtn.attributedTitle = NSAttributedString(
+            string: "  Antigravity IDE (Live & Headless Standalone)",
+            attributes: [
+                .foregroundColor: NSColor.white,
+                .font: NSFont.systemFont(ofSize: 12.5, weight: .semibold)
+            ]
+        )
+        antiBtn.frame = NSRect(x: 14, y: antiCardH - 28, width: 380, height: 20)
+        antiCard.addSubview(antiBtn)
         self.antigravityCheck = antiBtn
-        y -= 18
         
         let antiDesc = NSTextField(labelWithString: "Detecta cotas do IDE em execução ou via sonda headless quando fechado.")
         antiDesc.font = NSFont.systemFont(ofSize: 10, weight: .regular)
         antiDesc.textColor = NSColor(white: 0.55, alpha: 1.0)
-        antiDesc.frame = NSRect(x: 40, y: y, width: 390, height: 14)
-        view.addSubview(antiDesc)
-        y -= 32
+        antiDesc.frame = NSRect(x: 36, y: 10, width: antiCard.frame.width - 48, height: 16)
+        antiCard.addSubview(antiDesc)
         
-        // 3. OpenAI
+        y -= (antiCardH + 12)
+        
+        // 3. OpenAI Card
+        let openCardH: CGFloat = 72
+        let openCard = NSBox(frame: NSRect(x: 18, y: y - openCardH, width: contentW - 36, height: openCardH))
+        openCard.boxType = .custom
+        openCard.fillColor = colorCard
+        openCard.borderColor = colorBorder
+        openCard.borderWidth = 1
+        openCard.cornerRadius = 8
+        view.addSubview(openCard)
+        
         let openCfg = providers["openai"]
-        let openBtn = NSButton(checkboxWithTitle: " OpenAI API (GPT-4o, o1, etc.)", target: nil, action: nil)
-        openBtn.font = NSFont.systemFont(ofSize: 12.5, weight: .semibold)
+        let openBtn = NSButton(checkboxWithTitle: "", target: nil, action: nil)
         openBtn.state = (openCfg?.enabled ?? false) ? .on : .off
-        openBtn.frame = NSRect(x: 20, y: y, width: 420, height: 20)
-        view.addSubview(openBtn)
+        openBtn.attributedTitle = NSAttributedString(
+            string: "  OpenAI API (GPT-4o, o1, etc.)",
+            attributes: [
+                .foregroundColor: NSColor.white,
+                .font: NSFont.systemFont(ofSize: 12.5, weight: .semibold)
+            ]
+        )
+        openBtn.frame = NSRect(x: 14, y: openCardH - 28, width: 380, height: 20)
+        openCard.addSubview(openBtn)
         self.openaiCheck = openBtn
-        y -= 26
         
-        let openField = NSTextField(frame: NSRect(x: 24, y: y, width: 412, height: 24))
+        let openField = NSTextField(frame: NSRect(x: 14, y: 10, width: openCard.frame.width - 28, height: 26))
         openField.placeholderString = "Chave de API OpenAI (sk-...)"
         openField.stringValue = openCfg?.api_key ?? ""
+        openField.isBordered = false
+        openField.focusRingType = .none
         openField.backgroundColor = colorField1F
         openField.textColor = .white
+        openField.font = NSFont.systemFont(ofSize: 11.5)
         openField.wantsLayer = true
         openField.layer?.borderColor = colorBorder.cgColor
         openField.layer?.borderWidth = 1
-        openField.layer?.cornerRadius = 4
-        view.addSubview(openField)
+        openField.layer?.cornerRadius = 5
+        openCard.addSubview(openField)
         self.openaiKeyField = openField
-        y -= 32
         
-        // 4. Anthropic Claude
+        y -= (openCardH + 12)
+        
+        // 4. Anthropic Card
+        let antCardH: CGFloat = 72
+        let antCard = NSBox(frame: NSRect(x: 18, y: y - antCardH, width: contentW - 36, height: antCardH))
+        antCard.boxType = .custom
+        antCard.fillColor = colorCard
+        antCard.borderColor = colorBorder
+        antCard.borderWidth = 1
+        antCard.cornerRadius = 8
+        view.addSubview(antCard)
+        
         let antCfg = providers["anthropic"]
-        let antBtn = NSButton(checkboxWithTitle: " Anthropic Claude API (Sonnet, Opus)", target: nil, action: nil)
-        antBtn.font = NSFont.systemFont(ofSize: 12.5, weight: .semibold)
+        let antBtn = NSButton(checkboxWithTitle: "", target: nil, action: nil)
         antBtn.state = (antCfg?.enabled ?? false) ? .on : .off
-        antBtn.frame = NSRect(x: 20, y: y, width: 420, height: 20)
-        view.addSubview(antBtn)
+        antBtn.attributedTitle = NSAttributedString(
+            string: "  Anthropic Claude API (Sonnet, Opus)",
+            attributes: [
+                .foregroundColor: NSColor.white,
+                .font: NSFont.systemFont(ofSize: 12.5, weight: .semibold)
+            ]
+        )
+        antBtn.frame = NSRect(x: 14, y: antCardH - 28, width: 380, height: 20)
+        antCard.addSubview(antBtn)
         self.anthropicCheck = antBtn
-        y -= 26
         
-        let antField = NSTextField(frame: NSRect(x: 24, y: y, width: 412, height: 24))
+        let antField = NSTextField(frame: NSRect(x: 14, y: 10, width: antCard.frame.width - 28, height: 26))
         antField.placeholderString = "Chave de API Anthropic (sk-ant-...)"
         antField.stringValue = antCfg?.api_key ?? ""
+        antField.isBordered = false
+        antField.focusRingType = .none
         antField.backgroundColor = colorField1F
         antField.textColor = .white
+        antField.font = NSFont.systemFont(ofSize: 11.5)
         antField.wantsLayer = true
         antField.layer?.borderColor = colorBorder.cgColor
         antField.layer?.borderWidth = 1
-        antField.layer?.cornerRadius = 4
-        view.addSubview(antField)
+        antField.layer?.cornerRadius = 5
+        antCard.addSubview(antField)
         self.anthropicKeyField = antField
-        y -= 45
         
-        // Buttons
+        // Footer Buttons
         let saveBtn = NSButton(title: "Salvar e Atualizar", target: self, action: #selector(saveSettingsClicked))
         saveBtn.isBordered = false
         saveBtn.wantsLayer = true
-        saveBtn.layer?.backgroundColor = NSColor(srgbRed: 0xEE/255.0, green: 0xEE/255.0, blue: 0xF0/255.0, alpha: 1.0).cgColor
+        saveBtn.layer?.backgroundColor = NSColor(srgbRed: 0x00/255.0, green: 0xE6/255.0, blue: 0x99/255.0, alpha: 1.0).cgColor
         saveBtn.layer?.cornerRadius = 6
-        saveBtn.frame = NSRect(x: 20, y: 16, width: 140, height: 32)
+        saveBtn.frame = NSRect(x: 18, y: 16, width: 144, height: 32)
         saveBtn.attributedTitle = NSAttributedString(
             string: "Salvar e Atualizar",
             attributes: [
-                .foregroundColor: NSColor(srgbRed: 0x18/255.0, green: 0x18/255.0, blue: 0x18/255.0, alpha: 1.0),
-                .font: NSFont.systemFont(ofSize: 12, weight: .semibold)
+                .foregroundColor: NSColor(srgbRed: 0x12/255.0, green: 0x12/255.0, blue: 0x12/255.0, alpha: 1.0),
+                .font: NSFont.systemFont(ofSize: 12, weight: .bold)
             ]
         )
         view.addSubview(saveBtn)
@@ -1493,9 +1714,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let cancelBtn = NSButton(title: "Cancelar", target: self, action: #selector(cancelSettingsClicked))
         cancelBtn.isBordered = false
         cancelBtn.wantsLayer = true
-        cancelBtn.layer?.backgroundColor = NSColor(white: 0.25, alpha: 1.0).cgColor
+        cancelBtn.layer?.backgroundColor = NSColor(srgbRed: 0x2A/255.0, green: 0x2A/255.0, blue: 0x2E/255.0, alpha: 1.0).cgColor
         cancelBtn.layer?.cornerRadius = 6
-        cancelBtn.frame = NSRect(x: 170, y: 16, width: 90, height: 32)
+        cancelBtn.frame = NSRect(x: 172, y: 16, width: 90, height: 32)
         cancelBtn.attributedTitle = NSAttributedString(
             string: "Cancelar",
             attributes: [
@@ -1504,6 +1725,82 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             ]
         )
         view.addSubview(cancelBtn)
+        
+        let brandBtn = NSButton(title: "vh2c.com.br", target: self, action: #selector(brandClicked))
+        brandBtn.isBordered = false
+        brandBtn.frame = NSRect(x: contentW - 140, y: 22, width: 120, height: 18)
+        brandBtn.attributedTitle = NSAttributedString(
+            string: "vh2c.com.br",
+            attributes: [
+                .foregroundColor: NSColor(white: 0.40, alpha: 1.0),
+                .font: NSFont.systemFont(ofSize: 11, weight: .medium)
+            ]
+        )
+        view.addSubview(brandBtn)
+    }
+    
+    @objc func testGeminiKeyClicked() {
+        let key = geminiKeyField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if key.isEmpty {
+            geminiStatusLabel?.stringValue = "⚠️ Digite uma chave de API para testar"
+            geminiStatusLabel?.textColor = NSColor(srgbRed: 0xF5/255.0, green: 0xA6/255.0, blue: 0x23/255.0, alpha: 1.0)
+            return
+        }
+        
+        if key.hasPrefix("AQ.") || key.hasPrefix("ya29.") {
+            geminiStatusLabel?.stringValue = "⚠️ Use Chave do Google AI Studio (inicia com AIzaSy...)"
+            geminiStatusLabel?.textColor = NSColor(srgbRed: 0xF5/255.0, green: 0xA6/255.0, blue: 0x23/255.0, alpha: 1.0)
+            return
+        }
+        
+        geminiTestBtn?.isEnabled = false
+        geminiStatusLabel?.stringValue = "Testando conexão com Google AI..."
+        geminiStatusLabel?.textColor = NSColor(white: 0.70, alpha: 1.0)
+        
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let nodeBin = QuotaManager.findNodeBinary()
+            let task = Process()
+            if nodeBin.hasPrefix("/") {
+                task.executableURL = URL(fileURLWithPath: nodeBin)
+                task.arguments = [QuotaManager.engineScript, "--test-gemini", key]
+            } else {
+                task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+                task.arguments = ["node", QuotaManager.engineScript, "--test-gemini", key]
+            }
+            
+            var env = ProcessInfo.processInfo.environment
+            env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:" + (env["PATH"] ?? "")
+            task.environment = env
+            
+            let pipe = Pipe()
+            task.standardOutput = pipe
+            task.standardError = Pipe()
+            
+            do {
+                try task.run()
+                task.waitUntilExit()
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let output = String(data: data, encoding: .utf8) ?? ""
+                
+                DispatchQueue.main.async {
+                    self?.geminiTestBtn?.isEnabled = true
+                    if output.contains("\"ok\":true") {
+                        self?.geminiStatusLabel?.stringValue = "✓ Chave válida! Modelos Gemini conectados."
+                        self?.geminiStatusLabel?.textColor = NSColor(srgbRed: 0x00/255.0, green: 0xE6/255.0, blue: 0x99/255.0, alpha: 1.0)
+                        self?.geminiCheck?.state = .on
+                    } else {
+                        self?.geminiStatusLabel?.stringValue = "✕ Não autorizado. Obtenha chave em aistudio.google.com"
+                        self?.geminiStatusLabel?.textColor = NSColor(srgbRed: 0xFF/255.0, green: 0x4D/255.0, blue: 0x4F/255.0, alpha: 1.0)
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self?.geminiTestBtn?.isEnabled = true
+                    self?.geminiStatusLabel?.stringValue = "✕ Erro: \(error.localizedDescription)"
+                    self?.geminiStatusLabel?.textColor = NSColor.systemRed
+                }
+            }
+        }
     }
     
     @objc func openAiStudioLink() {

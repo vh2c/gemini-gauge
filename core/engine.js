@@ -101,13 +101,27 @@ class UniversalQuotaEngine {
 }
 
 if (require.main === module) {
-  const engine = new UniversalQuotaEngine();
-  engine.fetchAll().then(res => {
-    console.log(JSON.stringify(res, null, 2));
-  }).catch(err => {
-    console.error(JSON.stringify({ error: err.message }));
-    process.exit(1);
-  });
+  const args = process.argv.slice(2);
+  if (args[0] === '--test-gemini' || args[0] === '--test-key') {
+    const key = args[1] || '';
+    new GeminiProvider(key).fetch().then(res => {
+      if (res && res.groups && res.groups.length > 0) {
+        console.log(JSON.stringify({ ok: true, provider: 'gemini', models_count: 3 }));
+      } else {
+        console.log(JSON.stringify({ ok: false, error: 'Chave inválida ou sem permissão de acesso' }));
+      }
+    }).catch(err => {
+      console.log(JSON.stringify({ ok: false, error: err.message }));
+    });
+  } else {
+    const engine = new UniversalQuotaEngine();
+    engine.fetchAll().then(res => {
+      console.log(JSON.stringify(res, null, 2));
+    }).catch(err => {
+      console.error(JSON.stringify({ error: err.message }));
+      process.exit(1);
+    });
+  }
 }
 
 module.exports = { UniversalQuotaEngine };

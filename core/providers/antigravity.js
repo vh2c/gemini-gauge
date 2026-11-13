@@ -75,7 +75,45 @@ class AntigravityProvider {
     this.platform = process.platform;
   }
 
+  findFromDaemonHubs() {
+    try {
+      const daemonDir = path.join(os.homedir(), '.gemini/antigravity/daemon');
+      if (!fs.existsSync(daemonDir)) return null;
+      const files = fs.readdirSync(daemonDir).filter(f => f.startsWith('hub_') && f.endsWith('.json'));
+      // Sort newest first
+      files.sort((a, b) => {
+        try {
+          return fs.statSync(path.join(daemonDir, b)).mtimeMs - fs.statSync(path.join(daemonDir, a)).mtimeMs;
+        } catch (_) { return 0; }
+      });
+
+      for (const file of files) {
+        try {
+          const content = JSON.parse(fs.readFileSync(path.join(daemonDir, file), 'utf8'));
+          if (content.pid && content.csrfToken) {
+            try {
+              process.kill(content.pid, 0); // Check if alive
+              return {
+                pid: content.pid,
+                csrfToken: content.csrfToken,
+                httpPort: content.httpPort,
+                httpsPort: content.httpsPort,
+                commandLine: ''
+              };
+            } catch (_) {}
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+    return null;
+  }
+
   async findRunningProcess() {
+    // 1. Instant check from daemon directory
+    const daemonHub = this.findFromDaemonHubs();
+    if (daemonHub) return daemonHub;
+
+    // 2. Fallback to process table scan
     try {
       if (this.platform === 'win32') {
         const cmd = 'powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -match \'language_server|agy\' } | Select-Object ProcessId, CommandLine | ConvertTo-Json"';
@@ -103,7 +141,15 @@ class AntigravityProvider {
     return null;
   }
 
-  async getPorts(pid, commandLine) {
+  async getPorts(proc) {
+    if (proc.httpsPort || proc.httpPort) {
+      const p = [];
+      if (proc.httpsPort) p.push(proc.httpsPort);
+      if (proc.httpPort) p.push(proc.httpPort);
+      return p;
+    }
+    const pid = proc.pid;
+    const commandLine = proc.commandLine || '';
     const ports = extractCliPorts(commandLine);
     try {
       if (this.platform === 'win32') {
@@ -130,7 +176,7 @@ class AntigravityProvider {
       }
     } catch (_) {}
 
-    const defaults = [58014, 58013, 53530, 53527, 53529, 53533, 53534];
+    const defaults = [53078, 53079, 58014, 58013, 53530, 53527, 53529, 53533, 53534];
     for (const d of defaults) {
       if (!ports.includes(d)) ports.push(d);
     }
@@ -196,41 +242,91 @@ class AntigravityProvider {
     if (!binPath) return null;
 
     const token = 'uaqm-' + Math.random().toString(36).substring(2, 12);
-    const proc = spawn(binPath, [
-      '--headless=true',
+    const args = [
       '--standalone',
-      '--http_server_port=0',
-      `--csrf_token=${token}`,
-      '--app_data_dir=antigravity'
-    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+      '--override_ide_name', 'antigravity',
+      '--subclient_type', 'hub',
+      '--app_data_dir', 'antigravity',
+      '--api_server_url', 'https://generativelanguage.googleapis.com',
+      '--cloud_code_endpoint', 'https://daily-cloudcode-pa.googleapis.com',
+      '--https_server_port', '0',
+      '--csrf_token', token
+    ];
+
+    const proc = spawn(binPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
     return new Promise((resolve) => {
-      let output = '';
-      let timer = setTimeout(() => {
-        try { proc.kill(); } catch (_) {}
-        resolve(null);
-      }, 4000);
+      let resolved = false;
+      let stderrOutput = '';
+      let stdoutOutput = '';
 
-      proc.stdout.on('data', async (chunk) => {
-        output += chunk.toString();
-        const m = output.match(/http(?:s)?:\/\/127\.0\.0\.1:(\d+)/i) || output.match(/port\s*[:=]\s*(\d+)/i);
-        if (m) {
-          clearTimeout(timer);
-          const port = parseInt(m[1], 10);
-          const userRes = await this.requestRpc(port, token, RPC_USER_STATUS_PATH, {}, false);
-          const sumRes = await this.requestRpc(port, token, RPC_SUMMARY_PATH, {}, false);
-          try { proc.kill(); } catch (_) {}
-          if (userRes.ok && sumRes.ok) {
-            resolve({ summary: sumRes.data, user: userRes.data, mode: 'headless' });
-          } else {
-            resolve(null);
-          }
+      const cleanup = () => {
+        try { proc.kill(); } catch (_) {}
+      };
+
+      const timer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          cleanup();
+          resolve(null);
         }
+      }, 5000);
+
+      const tryConnect = async (port, isHttps) => {
+        if (resolved) return;
+        // Small delay for server initialization
+        await new Promise(r => setTimeout(r, 250));
+        const userRes = await this.requestRpc(port, token, RPC_USER_STATUS_PATH, {}, isHttps);
+        const sumRes = await this.requestRpc(port, token, RPC_SUMMARY_PATH, {}, isHttps);
+        if (!resolved && (sumRes.ok || userRes.ok)) {
+          resolved = true;
+          clearTimeout(timer);
+          cleanup();
+          resolve({ summary: sumRes.data || {}, user: userRes.data || {}, mode: 'headless' });
+        }
+      };
+
+      const handleChunk = (chunk) => {
+        const text = chunk.toString();
+        // Check for HTTPS port
+        const mHttps = text.match(/listening on random port at (\d+) for HTTPS/i);
+        if (mHttps) {
+          const port = parseInt(mHttps[1], 10);
+          tryConnect(port, true);
+          return;
+        }
+        // Check for HTTP port
+        const mHttp = text.match(/listening on random port at (\d+) for HTTP/i);
+        if (mHttp) {
+          const port = parseInt(mHttp[1], 10);
+          tryConnect(port, false);
+          return;
+        }
+      };
+
+      proc.stderr.on('data', (d) => {
+        stderrOutput += d.toString();
+        handleChunk(d);
+      });
+      proc.stdout.on('data', (d) => {
+        stdoutOutput += d.toString();
+        handleChunk(d);
       });
 
       proc.on('error', () => {
-        clearTimeout(timer);
-        resolve(null);
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          resolve(null);
+        }
+      });
+
+      proc.on('exit', () => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          resolve(null);
+        }
       });
     });
   }
@@ -239,9 +335,9 @@ class AntigravityProvider {
     // 1. Tenta processo em execução (0 overhead)
     const proc = await this.findRunningProcess();
     if (proc) {
-      const ports = await this.getPorts(proc.pid, proc.commandLine);
+      const ports = await this.getPorts(proc);
       for (const port of ports) {
-        for (const isHttps of [false, true]) {
+        for (const isHttps of [true, false]) {
           const userRes = await this.requestRpc(port, proc.csrfToken, RPC_USER_STATUS_PATH, {}, isHttps);
           if (userRes.ok) {
             const sumRes = await this.requestRpc(port, proc.csrfToken, RPC_SUMMARY_PATH, {}, isHttps);
