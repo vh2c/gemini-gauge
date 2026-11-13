@@ -155,7 +155,7 @@ extension QuotaData {
                 }
             }
             sections.append(GaugeSection(
-                name: "Google AI Studio",
+                name: "Google AI",
                 subtitle: "Gemini API",
                 tag: "AI STUDIO",
                 accentColor: NSColor(srgbRed: 0x38/255.0, green: 0xBD/255.0, blue: 0xF8/255.0, alpha: 1.0),
@@ -740,31 +740,92 @@ func makeCenteredDarkField(frame: NSRect, placeholder: String, value: String) ->
     return field
 }
 
-func makeSectionBadge(title: String, color: NSColor, width: CGFloat) -> NSView {
-    let container = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 20))
-    let bgBox = NSBox(frame: NSRect(x: 8, y: 0, width: width - 16, height: 20))
-    bgBox.boxType = .custom
-    bgBox.fillColor = color.withAlphaComponent(0.12)
-    bgBox.borderColor = color.withAlphaComponent(0.35)
-    bgBox.borderWidth = 1.0
-    bgBox.cornerRadius = 10.0
-    container.addSubview(bgBox)
+class SectionFrameView: NSView {
+    let title: String
+    let accentColor: NSColor
     
-    let dot = NSBox(frame: NSRect(x: 16, y: 7, width: 6, height: 6))
-    dot.boxType = .custom
-    dot.fillColor = color
-    dot.borderColor = .clear
-    dot.cornerRadius = 3.0
-    container.addSubview(dot)
+    init(frame: NSRect, title: String, accentColor: NSColor) {
+        self.title = title
+        self.accentColor = accentColor
+        super.init(frame: frame)
+        self.wantsLayer = true
+    }
     
-    let label = NSTextField(labelWithString: title.uppercased())
-    label.font = NSFont.systemFont(ofSize: 8.5, weight: .bold)
-    label.textColor = color
-    label.alignment = .center
-    label.frame = NSRect(x: 24, y: 3, width: width - 40, height: 14)
-    container.addSubview(label)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
     
-    return container
+    override var isFlipped: Bool { return true }
+    
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        
+        let titleFont = NSFont.systemFont(ofSize: 11.5, weight: .semibold)
+        let titleAttrs: [NSAttributedString.Key: Any] = [
+            .font: titleFont,
+            .foregroundColor: accentColor
+        ]
+        let titleStr = title as NSString
+        let titleSize = titleStr.size(withAttributes: titleAttrs)
+        
+        let strokeW: CGFloat = 1.8
+        let r: CGFloat = 12.0
+        let inset = strokeW / 2.0
+        let topY: CGFloat = 8.0
+        let boxRect = CGRect(
+            x: inset,
+            y: topY,
+            width: bounds.width - strokeW,
+            height: bounds.height - topY - inset
+        )
+        
+        let cx = bounds.midX
+        let halfGap = (titleSize.width / 2.0) + 5.0
+        let gapStart = cx - halfGap
+        let gapEnd = cx + halfGap
+        
+        // Rounded border with open top gap for the title
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: gapEnd, y: boxRect.minY))
+        path.addLine(to: CGPoint(x: boxRect.maxX - r, y: boxRect.minY))
+        path.addArc(
+            tangent1End: CGPoint(x: boxRect.maxX, y: boxRect.minY),
+            tangent2End: CGPoint(x: boxRect.maxX, y: boxRect.minY + r),
+            radius: r
+        )
+        path.addLine(to: CGPoint(x: boxRect.maxX, y: boxRect.maxY - r))
+        path.addArc(
+            tangent1End: CGPoint(x: boxRect.maxX, y: boxRect.maxY),
+            tangent2End: CGPoint(x: boxRect.maxX - r, y: boxRect.maxY),
+            radius: r
+        )
+        path.addLine(to: CGPoint(x: boxRect.minX + r, y: boxRect.maxY))
+        path.addArc(
+            tangent1End: CGPoint(x: boxRect.minX, y: boxRect.maxY),
+            tangent2End: CGPoint(x: boxRect.minX, y: boxRect.maxY - r),
+            radius: r
+        )
+        path.addLine(to: CGPoint(x: boxRect.minX, y: boxRect.minY + r))
+        path.addArc(
+            tangent1End: CGPoint(x: boxRect.minX, y: boxRect.minY),
+            tangent2End: CGPoint(x: boxRect.minX + r, y: boxRect.minY),
+            radius: r
+        )
+        path.addLine(to: CGPoint(x: gapStart, y: boxRect.minY))
+        
+        ctx.setStrokeColor(accentColor.cgColor)
+        ctx.setLineWidth(strokeW)
+        ctx.setLineCap(.round)
+        ctx.setLineJoin(.round)
+        ctx.addPath(path)
+        ctx.strokePath()
+        
+        // Draw title text exactly centered on the top gap line
+        let textX = cx - (titleSize.width / 2.0)
+        let textY = topY - (titleSize.height / 2.0)
+        titleStr.draw(at: CGPoint(x: textX, y: textY), withAttributes: titleAttrs)
+    }
 }
 
 // MARK: - App Delegate
@@ -1056,12 +1117,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             hudW = isVertical ? 124 : 260
             hudH = isVertical ? 180 : 100
         } else if isVertical {
-            hudW = 116
-            let calcH = 28 + CGFloat(sections.count) * 28 + CGFloat(totalItems) * 96 + 24
+            hudW = 114
+            var totalSectionsH: CGFloat = 0
+            for s in sections {
+                totalSectionsH += 15.0 + CGFloat(s.items.count) * 96 + 8.0
+            }
+            let totalGaps = CGFloat(max(sections.count - 1, 0)) * 10.0
+            let calcH = 26 + totalSectionsH + totalGaps + 26
             hudH = min(calcH, maxScreenH)
         } else {
-            let sectionsGap = CGFloat(max(sections.count - 1, 0)) * 16
-            hudW = max(28 + CGFloat(totalItems) * 96 + sectionsGap + 36, 260)
+            let totalFrameW = sections.reduce(0) { $0 + 12.0 + CGFloat($1.items.count) * 96 + 8.0 } + CGFloat(max(sections.count - 1, 0)) * 10.0
+            hudW = max(16 + totalFrameW + 40, 260)
             hudH = 126
         }
         
@@ -1189,7 +1255,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 let footerH: CGFloat = 20
                 let topBarH: CGFloat = 26
                 let scrollH = hudH - topBarH - footerH
-                let contentH = CGFloat(sections.count) * 28 + CGFloat(totalItems) * 96
+                
+                var totalSectionsH: CGFloat = 0
+                for s in sections {
+                    totalSectionsH += 15.0 + CGFloat(s.items.count) * 96 + 8.0
+                }
+                let totalGaps = CGFloat(max(sections.count - 1, 0)) * 10.0
+                let contentH = totalSectionsH + totalGaps + 8.0
                 
                 let scrollView = NSScrollView(frame: NSRect(x: 0, y: footerH, width: hudW, height: scrollH))
                 scrollView.hasVerticalScroller = (contentH > scrollH)
@@ -1200,20 +1272,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 contentView.wantsLayer = true
                 contentView.layer?.backgroundColor = NSColor.clear.cgColor
                 
-                var curY: CGFloat = 2
+                let frameW: CGFloat = 102
+                let frameX = (hudW - frameW) / 2.0
+                var curY: CGFloat = 4.0
+                
                 for s in sections {
-                    let badge = makeSectionBadge(title: s.name, color: s.accentColor, width: hudW)
-                    badge.frame = NSRect(x: 0, y: curY, width: hudW, height: 20)
-                    contentView.addSubview(badge)
-                    curY += 24
+                    let frameH = 15.0 + CGFloat(s.items.count) * 96 + 8.0
+                    let sectionFrame = SectionFrameView(
+                        frame: NSRect(x: frameX, y: curY, width: frameW, height: frameH),
+                        title: s.name,
+                        accentColor: s.accentColor
+                    )
                     
-                    for item in s.items {
+                    for (idx, item) in s.items.enumerated() {
                         let gauge = TachometerGaugeView(item: item)
-                        gauge.frame = NSRect(x: (hudW - 88) / 2.0, y: curY, width: 88, height: 96)
-                        contentView.addSubview(gauge)
-                        curY += 96
+                        gauge.frame = NSRect(x: (frameW - 88) / 2.0, y: 15.0 + CGFloat(idx) * 96, width: 88, height: 96)
+                        sectionFrame.addSubview(gauge)
                     }
-                    curY += 4
+                    
+                    contentView.addSubview(sectionFrame)
+                    curY += frameH + 10.0
                 }
                 
                 scrollView.documentView = contentView
@@ -1262,28 +1340,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 container.addSubview(cfgBtn)
             } else {
                 var curX: CGFloat = 12
-                for (sIdx, s) in sections.enumerated() {
-                    if sIdx > 0 {
-                        let sep = NSBox(frame: NSRect(x: curX + 2, y: 16, width: 1, height: hudH - 32))
-                        sep.boxType = .custom
-                        sep.fillColor = NSColor(srgbRed: 0x33/255.0, green: 0x33/255.0, blue: 0x38/255.0, alpha: 1.0)
-                        sep.borderColor = .clear
-                        container.addSubview(sep)
-                        curX += 14
-                    }
-                    
-                    let tagLabel = NSTextField(labelWithString: s.name.uppercased())
-                    tagLabel.font = NSFont.systemFont(ofSize: 8.5, weight: .bold)
-                    tagLabel.textColor = s.accentColor
-                    tagLabel.frame = NSRect(x: curX + 4, y: hudH - 20, width: CGFloat(s.items.count) * 96, height: 14)
-                    container.addSubview(tagLabel)
-                    
-                    for item in s.items {
+                for s in sections {
+                    let frameW = 12.0 + CGFloat(s.items.count) * 96 + 8.0
+                    let frameH: CGFloat = 112.0
+                    let sectionFrame = SectionFrameView(
+                        frame: NSRect(x: curX, y: 6.0, width: frameW, height: frameH),
+                        title: s.name,
+                        accentColor: s.accentColor
+                    )
+                    for (idx, item) in s.items.enumerated() {
                         let gauge = TachometerGaugeView(item: item)
-                        gauge.frame = NSRect(x: curX, y: 12, width: 88, height: 96)
-                        container.addSubview(gauge)
-                        curX += 96
+                        gauge.frame = NSRect(x: 10.0 + CGFloat(idx) * 96, y: 10.0, width: 88, height: 96)
+                        sectionFrame.addSubview(gauge)
                     }
+                    container.addSubview(sectionFrame)
+                    curX += frameW + 10.0
                 }
             }
             
