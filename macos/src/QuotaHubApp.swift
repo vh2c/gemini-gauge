@@ -520,6 +520,10 @@ enum HudOrientation: String {
     case horizontal
 }
 
+class FlippedContentView: NSView {
+    override var isFlipped: Bool { return true }
+}
+
 // MARK: - App Delegate
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var fullWindow: NSWindow?
@@ -1099,24 +1103,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     
     func setupFullUI(with quota: QuotaData) {
         let colorBg18 = NSColor(srgbRed: 0x18/255.0, green: 0x18/255.0, blue: 0x18/255.0, alpha: 1.0)
-        let colorField1F = NSColor(srgbRed: 0x1F/255.0, green: 0x1F/255.0, blue: 0x1F/255.0, alpha: 1.0)
-        let colorBorder = NSColor(srgbRed: 0x2C/255.0, green: 0x2C/255.0, blue: 0x2C/255.0, alpha: 1.0)
-        let colorSep = NSColor(srgbRed: 0x28/255.0, green: 0x28/255.0, blue: 0x28/255.0, alpha: 1.0)
-        let colorTrack = NSColor(srgbRed: 0x2D/255.0, green: 0x2D/255.0, blue: 0x2D/255.0, alpha: 1.0)
+        let colorField1F = NSColor(srgbRed: 0x1E/255.0, green: 0x1E/255.0, blue: 0x22/255.0, alpha: 1.0)
+        let colorBorder = NSColor(srgbRed: 0x2C/255.0, green: 0x2C/255.0, blue: 0x30/255.0, alpha: 1.0)
+        let colorSep = NSColor(srgbRed: 0x28/255.0, green: 0x28/255.0, blue: 0x2E/255.0, alpha: 1.0)
+        let colorTrack = NSColor(srgbRed: 0x28/255.0, green: 0x28/255.0, blue: 0x2D/255.0, alpha: 1.0)
         
         let windowWidth: CGFloat = 460
-        var totalCardsHeight: CGFloat = 0
-        for g in quota.groups {
-            totalCardsHeight += 32 + CGFloat(g.buckets.count * 48 + 14)
-        }
-        let footerHeight: CGFloat = 66
-        let contentHeight: CGFloat
+        let footerHeight: CGFloat = 68
+        
+        // Calcular altura total do conteúdo
+        var calcContentH: CGFloat = 18 // padding do topo
+        calcContentH += 22 // Título do app e link vh2c
+        calcContentH += 18 // Conta e plano
+        calcContentH += 16 // Status e timestamp
+        calcContentH += 18 // Divisor e espaçamento generoso antes dos cards
+        
         if quota.groups.isEmpty {
-            contentHeight = 160
+            calcContentH += 110 + 16
         } else {
-            contentHeight = 65 + totalCardsHeight + 10
+            for g in quota.groups {
+                calcContentH += 30 + CGFloat(g.buckets.count * 48 + 8) + 14
+            }
         }
-        let windowHeight = min(contentHeight + footerHeight + 10, 720)
+        calcContentH += 16 // padding inferior
+        
+        let windowHeight = min(calcContentH + footerHeight, 720)
         
         if fullWindow == nil {
             let windowRect = NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight)
@@ -1132,6 +1143,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             win.level = .normal
             win.center()
             fullWindow = win
+        } else if let win = fullWindow {
+            let cur = win.frame
+            let newY = cur.origin.y + (cur.height - windowHeight)
+            win.setFrame(NSRect(x: cur.origin.x, y: newY, width: windowWidth, height: windowHeight), display: true, animate: false)
         }
         
         guard let window = fullWindow else { return }
@@ -1144,42 +1159,68 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         mainView.autoresizingMask = [.width, .height]
         window.contentView = mainView
         
-        let scrollViewHeight = windowHeight - footerHeight
+        let scrollViewHeight = window.contentView!.bounds.height - footerHeight
         let scrollView = NSScrollView(frame: NSRect(x: 0, y: footerHeight, width: windowWidth, height: scrollViewHeight))
-        scrollView.hasVerticalScroller = contentHeight > scrollViewHeight
+        scrollView.hasVerticalScroller = calcContentH > scrollViewHeight
         scrollView.drawsBackground = true
         scrollView.backgroundColor = colorBg18
         scrollView.autoresizingMask = [.width, .height]
         
-        let actualContentHeight = max(contentHeight, scrollViewHeight)
-        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: windowWidth, height: actualContentHeight))
+        let contentView = FlippedContentView(frame: NSRect(x: 0, y: 0, width: windowWidth, height: max(calcContentH, scrollViewHeight)))
         contentView.wantsLayer = true
         contentView.layer?.backgroundColor = colorBg18.cgColor
         
-        var currentY = actualContentHeight - 16
+        var y: CGFloat = 18
         
-        // Conta & Plano
-        let accountText = "\(quota.account) • Plano \(quota.plan ?? "Universal")"
+        // ----------------- HEADER COM ESPAÇAMENTO -----------------
+        let appTitle = NSTextField(labelWithString: "Gemini Gauge")
+        appTitle.font = NSFont.systemFont(ofSize: 15.5, weight: .bold)
+        appTitle.textColor = .white
+        appTitle.frame = NSRect(x: 20, y: y, width: 220, height: 20)
+        contentView.addSubview(appTitle)
+        
+        let headerBrandBtn = NSButton(title: "", target: self, action: #selector(brandClicked))
+        headerBrandBtn.isBordered = false
+        headerBrandBtn.frame = NSRect(x: windowWidth - 170, y: y, width: 150, height: 20)
+        headerBrandBtn.toolTip = "Visite vh2c.com.br"
+        headerBrandBtn.attributedTitle = NSAttributedString(
+            string: "vh2c.com.br ↗",
+            attributes: [
+                .foregroundColor: NSColor(srgbRed: 0x38/255.0, green: 0xBD/255.0, blue: 0xF8/255.0, alpha: 0.95),
+                .font: NSFont.systemFont(ofSize: 12, weight: .semibold)
+            ]
+        )
+        contentView.addSubview(headerBrandBtn)
+        y += 24
+        
+        let accountText = "\(quota.account)  •  Plano \(quota.plan ?? "Universal")"
         let accountLabel = NSTextField(labelWithString: accountText)
-        accountLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
-        accountLabel.textColor = .white
-        accountLabel.frame = NSRect(x: 22, y: currentY - 18, width: 416, height: 18)
+        accountLabel.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        accountLabel.textColor = NSColor(white: 0.85, alpha: 1.0)
+        accountLabel.frame = NSRect(x: 20, y: y, width: windowWidth - 40, height: 16)
         contentView.addSubview(accountLabel)
-        currentY -= 22
+        y += 18
         
         let cacheInfo = (quota.from_cache ?? false) ? " (Cache \(quota.cache_age_seconds ?? 0)s atrás)" : " (Tempo real)"
         let timeText = "Atualizado às \(quota.updated_at ?? "agora")\(cacheInfo)"
         let timeLabel = NSTextField(labelWithString: timeText)
-        timeLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)
-        timeLabel.textColor = NSColor(white: 0.65, alpha: 1.0)
-        timeLabel.frame = NSRect(x: 22, y: currentY - 15, width: 416, height: 15)
+        timeLabel.font = NSFont.systemFont(ofSize: 10.5, weight: .regular)
+        timeLabel.textColor = NSColor(white: 0.55, alpha: 1.0)
+        timeLabel.frame = NSRect(x: 20, y: y, width: windowWidth - 40, height: 14)
         contentView.addSubview(timeLabel)
-        currentY -= 24
+        y += 20
         
-        // Cards por Provedor / Grupo
+        let headerDivider = NSBox(frame: NSRect(x: 18, y: y, width: windowWidth - 36, height: 1))
+        headerDivider.boxType = .custom
+        headerDivider.fillColor = colorSep
+        headerDivider.borderColor = .clear
+        contentView.addSubview(headerDivider)
+        y += 16 // Espaçamento generoso entre o header e os primeiros indicadores de cota!
+        
+        // ----------------- CARDS POR PROVEDOR / GRUPO -----------------
         if quota.groups.isEmpty {
-            let emptyHeight: CGFloat = 110
-            let cardView = NSBox(frame: NSRect(x: 16, y: currentY - emptyHeight, width: windowWidth - 32, height: emptyHeight))
+            let emptyH: CGFloat = 110
+            let cardView = NSBox(frame: NSRect(x: 16, y: y, width: windowWidth - 32, height: emptyH))
             cardView.boxType = .custom
             cardView.fillColor = colorField1F
             cardView.borderColor = colorBorder
@@ -1187,10 +1228,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             cardView.cornerRadius = 8
             contentView.addSubview(cardView)
             
-            let eTitle = NSTextField(labelWithString: "📡 Nenhum Provedor Ativo")
+            let eTitle = NSTextField(labelWithString: "Nenhum Provedor Ativo")
             eTitle.font = NSFont.systemFont(ofSize: 13, weight: .bold)
             eTitle.textColor = .white
-            eTitle.frame = NSRect(x: 16, y: 74, width: cardView.frame.width - 32, height: 18)
+            eTitle.frame = NSRect(x: 16, y: 14, width: cardView.frame.width - 32, height: 18)
             cardView.addSubview(eTitle)
             
             let eDesc = NSTextField(labelWithString: "O Antigravity IDE está fechado e nenhuma chave de API adicional (Gemini, OpenAI, Claude) foi configurada.")
@@ -1203,9 +1244,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let openCfgBtn = NSButton(title: "Configurar Provedores", target: self, action: #selector(openSettings))
             openCfgBtn.isBordered = false
             openCfgBtn.wantsLayer = true
-            openCfgBtn.layer?.backgroundColor = NSColor(srgbRed: 0x2A/255.0, green: 0x2A/255.0, blue: 0x2E/255.0, alpha: 1.0).cgColor
+            openCfgBtn.layer?.backgroundColor = NSColor(srgbRed: 0x2A/255.0, green: 0x2A/255.0, blue: 0x30/255.0, alpha: 1.0).cgColor
             openCfgBtn.layer?.cornerRadius = 5
-            openCfgBtn.frame = NSRect(x: 16, y: 10, width: 170, height: 22)
+            openCfgBtn.frame = NSRect(x: 16, y: 76, width: 170, height: 22)
             openCfgBtn.attributedTitle = NSAttributedString(
                 string: "⚙️ Configurar Provedores",
                 attributes: [
@@ -1214,81 +1255,87 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 ]
             )
             cardView.addSubview(openCfgBtn)
-            currentY -= (emptyHeight + 12)
+            y += emptyH + 14
         } else {
             for g in quota.groups {
-            let cardHeight = CGFloat(g.buckets.count * 48 + 14)
-            
-            let cardView = NSBox(frame: NSRect(x: 16, y: currentY - cardHeight, width: windowWidth - 32, height: cardHeight))
-            cardView.boxType = .custom
-            cardView.fillColor = colorField1F
-            cardView.borderColor = colorBorder
-            cardView.borderWidth = 1
-            cardView.cornerRadius = 8
-            contentView.addSubview(cardView)
-            
-            var cardY = cardHeight - 14
-            for (idx, b) in g.buckets.enumerated() {
-                if idx > 0 {
-                    let sep = NSBox(frame: NSRect(x: 14, y: cardY + 6, width: cardView.frame.width - 28, height: 1))
-                    sep.boxType = .custom
-                    sep.fillColor = colorSep
-                    sep.borderColor = .clear
-                    cardView.addSubview(sep)
+                let cardHeight = 30 + CGFloat(g.buckets.count * 48 + 8)
+                let cardView = NSBox(frame: NSRect(x: 16, y: y, width: windowWidth - 32, height: cardHeight))
+                cardView.boxType = .custom
+                cardView.fillColor = colorField1F
+                cardView.borderColor = colorBorder
+                cardView.borderWidth = 1
+                cardView.cornerRadius = 8
+                contentView.addSubview(cardView)
+                
+                // Group Title
+                let gTitle = NSTextField(labelWithString: g.name)
+                gTitle.font = NSFont.systemFont(ofSize: 12, weight: .bold)
+                gTitle.textColor = NSColor(white: 0.95, alpha: 1.0)
+                gTitle.frame = NSRect(x: 14, y: 10, width: cardView.frame.width - 28, height: 16)
+                cardView.addSubview(gTitle)
+                
+                var cardY: CGFloat = 32
+                for (idx, b) in g.buckets.enumerated() {
+                    if idx > 0 {
+                        let sep = NSBox(frame: NSRect(x: 14, y: cardY - 4, width: cardView.frame.width - 28, height: 1))
+                        sep.boxType = .custom
+                        sep.fillColor = colorSep
+                        sep.borderColor = .clear
+                        cardView.addSubview(sep)
+                    }
+                    
+                    let bTitle = NSTextField(labelWithString: b.name)
+                    bTitle.font = NSFont.systemFont(ofSize: 11.5, weight: .medium)
+                    bTitle.textColor = .white
+                    bTitle.frame = NSRect(x: 14, y: cardY, width: 260, height: 16)
+                    cardView.addSubview(bTitle)
+                    
+                    let valStr = "\(b.remaining_pct)%"
+                    let bVal = NSTextField(labelWithString: valStr)
+                    bVal.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .bold)
+                    
+                    if b.remaining_pct >= 50 {
+                        bVal.textColor = NSColor(srgbRed: 0x00/255.0, green: 0xE6/255.0, blue: 0x99/255.0, alpha: 1.0)
+                    } else if b.remaining_pct >= 20 {
+                        bVal.textColor = NSColor(srgbRed: 0xF5/255.0, green: 0xA6/255.0, blue: 0x23/255.0, alpha: 1.0)
+                    } else {
+                        bVal.textColor = NSColor(srgbRed: 0xFF/255.0, green: 0x4D/255.0, blue: 0x4F/255.0, alpha: 1.0)
+                    }
+                    bVal.alignment = .right
+                    bVal.frame = NSRect(x: cardView.frame.width - 150, y: cardY, width: 136, height: 16)
+                    cardView.addSubview(bVal)
+                    
+                    cardY += 18
+                    
+                    if let reset = b.reset_in, !reset.isEmpty {
+                        let resetLabel = NSTextField(labelWithString: "Renova em \(reset)")
+                        resetLabel.font = NSFont.systemFont(ofSize: 9.5, weight: .regular)
+                        resetLabel.textColor = NSColor(white: 0.50, alpha: 1.0)
+                        resetLabel.alignment = .right
+                        resetLabel.frame = NSRect(x: cardView.frame.width - 160, y: cardY - 4, width: 146, height: 12)
+                        cardView.addSubview(resetLabel)
+                    }
+                    
+                    let barBg = NSBox(frame: NSRect(x: 14, y: cardY + 12, width: cardView.frame.width - 28, height: 6))
+                    barBg.boxType = .custom
+                    barBg.fillColor = colorTrack
+                    barBg.borderColor = .clear
+                    barBg.cornerRadius = 3
+                    cardView.addSubview(barBg)
+                    
+                    let fillWidth = max(CGFloat(barBg.frame.width) * CGFloat(b.remaining_pct) / 100.0, 4)
+                    let barFill = NSBox(frame: NSRect(x: 14, y: cardY + 12, width: fillWidth, height: 6))
+                    barFill.boxType = .custom
+                    barFill.fillColor = bVal.textColor ?? NSColor.systemGreen
+                    barFill.borderColor = .clear
+                    barFill.cornerRadius = 3
+                    cardView.addSubview(barFill)
+                    
+                    cardY += 24
                 }
                 
-                let bTitle = NSTextField(labelWithString: b.name)
-                bTitle.font = NSFont.systemFont(ofSize: 12, weight: .medium)
-                bTitle.textColor = .white
-                bTitle.frame = NSRect(x: 14, y: cardY - 16, width: 260, height: 16)
-                cardView.addSubview(bTitle)
-                
-                let valStr = "\(b.remaining_pct)%"
-                let bVal = NSTextField(labelWithString: valStr)
-                bVal.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .bold)
-                
-                if b.remaining_pct >= 50 {
-                    bVal.textColor = NSColor(srgbRed: 0x00/255.0, green: 0xE6/255.0, blue: 0x99/255.0, alpha: 1.0)
-                } else if b.remaining_pct >= 20 {
-                    bVal.textColor = NSColor(srgbRed: 0xF5/255.0, green: 0xA6/255.0, blue: 0x23/255.0, alpha: 1.0)
-                } else {
-                    bVal.textColor = NSColor(srgbRed: 0xFF/255.0, green: 0x4D/255.0, blue: 0x4F/255.0, alpha: 1.0)
-                }
-                bVal.alignment = .right
-                bVal.frame = NSRect(x: cardView.frame.width - 150, y: cardY - 16, width: 136, height: 16)
-                cardView.addSubview(bVal)
-                
-                cardY -= 20
-                
-                if let reset = b.reset_in, !reset.isEmpty {
-                    let resetLabel = NSTextField(labelWithString: "Renova em \(reset)")
-                    resetLabel.font = NSFont.systemFont(ofSize: 10, weight: .regular)
-                    resetLabel.textColor = NSColor(white: 0.55, alpha: 1.0)
-                    resetLabel.alignment = .right
-                    resetLabel.frame = NSRect(x: cardView.frame.width - 160, y: cardY - 12, width: 146, height: 12)
-                    cardView.addSubview(resetLabel)
-                }
-                
-                let barBg = NSBox(frame: NSRect(x: 14, y: cardY - 6, width: cardView.frame.width - 28, height: 6))
-                barBg.boxType = .custom
-                barBg.fillColor = colorTrack
-                barBg.borderColor = .clear
-                barBg.cornerRadius = 3
-                cardView.addSubview(barBg)
-                
-                let fillWidth = max(CGFloat(barBg.frame.width) * CGFloat(b.remaining_pct) / 100.0, 4)
-                let barFill = NSBox(frame: NSRect(x: 14, y: cardY - 6, width: fillWidth, height: 6))
-                barFill.boxType = .custom
-                barFill.fillColor = bVal.textColor ?? NSColor.systemGreen
-                barFill.borderColor = .clear
-                barFill.cornerRadius = 3
-                cardView.addSubview(barFill)
-                
-                cardY -= 14
+                y += cardHeight + 14
             }
-            
-            currentY -= (cardHeight + 12)
-        }
         }
         
         scrollView.documentView = contentView
@@ -1298,7 +1345,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let btnText = NSColor(srgbRed: 0x18/255.0, green: 0x18/255.0, blue: 0x18/255.0, alpha: 1.0)
         
         // ----------------- RODAPÉ (Linha 1: Botões) -----------------
-        let footerY: CGFloat = 28
+        let footerY: CGFloat = 30
         
         // 1. Atualizar
         let refreshBtn = NSButton(title: "", target: self, action: #selector(refreshClicked))
@@ -1420,16 +1467,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         mainView.addSubview(closeBtn)
         
-        // ----------------- RODAPÉ (Linha 2: Menção vh2c.com.br) -----------------
+        // ----------------- RODAPÉ (Linha 2: Menção vh2c.com.br SEM ícone colorido, ligeiramente maior) -----------------
         let brandBtn = NSButton(title: "", target: self, action: #selector(brandClicked))
         brandBtn.isBordered = false
-        brandBtn.frame = NSRect(x: 14, y: 5, width: windowWidth - 28, height: 18)
+        brandBtn.frame = NSRect(x: 14, y: 5, width: windowWidth - 28, height: 20)
         brandBtn.toolTip = "Acesse vh2c.com.br"
         brandBtn.attributedTitle = NSAttributedString(
-            string: "⚡ Gemini Gauge  •  Desenvolvido por vh2c.com.br",
+            string: "Desenvolvido por vh2c.com.br",
             attributes: [
-                .foregroundColor: NSColor(srgbRed: 0x38/255.0, green: 0xBD/255.0, blue: 0xF8/255.0, alpha: 0.90),
-                .font: NSFont.systemFont(ofSize: 10.5, weight: .medium)
+                .foregroundColor: NSColor(srgbRed: 0x38/255.0, green: 0xBD/255.0, blue: 0xF8/255.0, alpha: 0.95),
+                .font: NSFont.systemFont(ofSize: 12.0, weight: .semibold)
             ]
         )
         mainView.addSubview(brandBtn)
