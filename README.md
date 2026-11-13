@@ -1,56 +1,124 @@
-# 🌐 Universal AI Quota Monitor
+<div align="center">
 
-[![Powered by VH2C](https://img.shields.io/badge/Developed%20by-vh2c.com.br-blue.svg?style=flat-square)](https://vh2c.com.br)
-[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg?style=flat-square)](#)
+# ⚡ Gemini Gauge
+
+### Multi-Platform AI Quota & Rate Limit Monitor for macOS, Linux & Windows
+**Developed by [VH2C](https://vh2c.com.br)**
+
+[![Total Downloads](https://img.shields.io/github/downloads/vh2c/gemini-gauge/total.svg?style=flat-square&logo=github&color=00E699)](https://github.com/vh2c/gemini-gauge/releases)
+[![Latest Release](https://img.shields.io/github/v/release/vh2c/gemini-gauge?style=flat-square&color=38BDF8)](https://github.com/vh2c/gemini-gauge/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
-[![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg?style=flat-square)](#)
-[![Python](https://img.shields.io/badge/Python-3.8+-3776AB.svg?style=flat-square&logo=python&logoColor=white)](#)
-[![PowerShell](https://img.shields.io/badge/PowerShell-WPF-5391FE.svg?style=flat-square)](#)
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg?style=flat-square)](#)
+[![Powered by VH2C](https://img.shields.io/badge/Developed%20by-vh2c.com.br-00C9FF?style=flat-square)](https://vh2c.com.br)
 
-A standalone, multi-provider AI usage quota & rate-limit monitor developed by **VH2C**.
+<br/>
 
-Monitors your AI quotas across multiple providers in a unified desktop interface **without requiring the Antigravity IDE to be open**, while supporting standalone API keys for **Google Gemini**, **OpenAI**, and **Anthropic Claude**.
+<img src="assets/icon_1024.png" width="180" height="180" alt="Gemini Gauge Icon" />
 
----
+<br/>
 
-## ⚡ Supported Providers
+**Gemini Gauge** is a lightweight, high-performance desktop application designed to monitor your AI model quotas and rate limits in real time. It operates **completely independently of any IDE**, aggregating usage across **Google Gemini API**, **Antigravity IDE (Live & Headless)**, **OpenAI**, and **Anthropic Claude**.
 
-1. **Antigravity Pro / Ultra**:
-   - Rolling 5-Hour Limit & Weekly Limit for Gemini Flash, Gemini Pro, Claude 3.5, GPT-4o, and Argon.
-   - **Runs independently**: Automatically detects running IDE or spins up a headless background engine probe when Antigravity is closed.
-2. **Google AI Studio / Gemini API**:
-   - Real-time model availability, RPM, TPM, and API key access status.
-3. **OpenAI API**:
-   - Request-per-minute (RPM) and token-per-minute (TPM) rate limit tracking.
-4. **Anthropic Claude API**:
-   - Claude API request and token quota limits.
+</div>
 
 ---
 
-## 🎛️ Dual Display Modes
+## 🌟 Key Highlights
 
-- **Full Detailed Window**: Traditional clean card layout (`#181818` background, `#1F1F1F` cards), full model details, progress bars, and countdown timers.
-- **Compact Radial HUD**: Sleek floating widget with speedometer/tachometer-style radial gauges:
-  - 36 radial tick marks with high-contrast active status colors (Green `#22921E`, Amber `#C86402`, Red `#C62828`).
-  - Centered percentage badge.
-  - Can be oriented as a **Vertical** sidebar strip (~104px wide) or **Horizontal** dock bar (~108px high).
-  - Draggable anywhere, always-on-top floating panel.
+- **🎯 True Multi-Provider Aggregation**:
+  - **Google Gemini API**: Direct connection to Google AI Studio (RPM, TPM, model availability).
+  - **Antigravity (Live & Headless)**: Detects live running IDE instances, or executes an instant standalone headless probe when closed.
+  - **OpenAI API**: Tracks Request-Per-Minute (RPM) and Token-Per-Minute (TPM) limits (GPT-4o, o1, etc.).
+  - **Anthropic Claude API**: Tracks Sonnet, Opus, and Haiku request/token quotas.
+- **⚡ Two Distinct Display Modes**:
+  - **Full Detailed Window**: Dark Obsidian theme (`#181818`), status progress bars, real-time counters, and countdown reset timers.
+  - **Radial Tachometer HUD**: Sleek floating meter dock with circular analog gauges, ticks, needles, and status colors. Can be docked vertically or horizontally.
+- **⚙️ Integrated Graphical Settings**:
+  - Click the **Configurar (⚙️)** button to easily toggle providers and paste your API keys without editing raw JSON files.
+- **🚀 Zero-Friction Installation**:
+  - Native installer scripts for macOS, Linux, and Windows that handle dependencies automatically.
 
-### Keyboard Shortcuts
+---
+
+## 📸 Display Modes
+
+### 1. Full Detailed Window
+A desktop window detailing each AI model group, active quota percentages, and exact time remaining until limit renewal.
+
+### 2. Radial Tachometer HUD
+A floating, always-on-top telemetry widget styled like high-end automotive tachometers:
+- **Green (`#00E699`)**: Quota Healthy (50% - 100%)
+- **Amber (`#F5A623`)**: Moderate Usage (20% - 49%)
+- **Red (`#FF4D4F`)**: Low Quota Warning (< 20%)
 
 | Shortcut | Action |
 | :--- | :--- |
-| `Cmd + M` (macOS) / `Ctrl + M` (Linux/Windows) | Toggle between **Full Window** and **Radial HUD** |
-| `Cmd + O` (macOS) / `Ctrl + O` (Linux/Windows) | Toggle HUD orientation between **Vertical** and **Horizontal** |
-| `Cmd + R` (macOS) / `Ctrl + R` (Linux/Windows) | Refresh all quotas immediately |
-| `Esc` | Close application |
-| **Double-Click any Gauge** | Expand into the Full Detailed Window |
+| `Cmd + M` (Mac) / `Ctrl + M` (Linux/Win) | Toggle between **Full Window** and **Radial HUD** |
+| `Cmd + O` (Mac) / `Ctrl + O` (Linux/Win) | Toggle HUD orientation between **Vertical** and **Horizontal** |
+| `Cmd + R` (Mac) / `Ctrl + R` (Linux/Win) | Refresh all quota metrics immediately |
+| `Cmd + ,` (Mac) / `Ctrl + ,` (Linux/Win) | Open the **Settings (⚙️)** Dialog |
+| `Cmd + W` / `Esc` | Close / Hide window to system tray |
 
 ---
 
-## ⚙️ Configuration (Optional API Keys)
+## 🚀 Quick Download & Installation
 
-To monitor standalone API keys alongside your Antigravity account, create or edit `~/.config/UniversalAIQuota/config.json`:
+### 🍏 macOS (Apple Silicon & Intel)
+1. Download the latest release: [Gemini-Gauge-macOS-vh2c.zip](https://github.com/vh2c/gemini-gauge/releases/latest)
+2. Extract the ZIP and move **`Gemini Gauge.app`** to your `/Applications` folder.
+3. Open `Gemini Gauge` from Spotlight or Launchpad!
+
+*Or build directly from source:*
+```bash
+git clone https://github.com/vh2c/gemini-gauge.git
+cd gemini-gauge/macos
+./install.sh
+```
+
+---
+
+### 🐧 Linux (Ubuntu, Debian, Fedora, Arch, Mint)
+The Linux installer is **100% self-contained** and automatically configures dependencies (including a portable Node.js runtime if missing, requiring zero root/sudo permissions for Node):
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/vh2c/gemini-gauge.git
+cd gemini-gauge/linux
+
+# 2. Run the smart installer
+./install.sh
+```
+
+- **Run GUI**: Open `Gemini Gauge` from your system applications menu, or run `gemini-gauge` in terminal.
+- **Run Headless / SSH CLI**:
+  ```bash
+  gemini-gauge --cli
+  ```
+
+---
+
+### 🪟 Windows (Windows 10 / 11)
+1. Download the latest release: [Gemini-Gauge-Windows-vh2c.zip](https://github.com/vh2c/gemini-gauge/releases/latest)
+2. Extract the ZIP.
+3. Right-click **`install.ps1`** and choose **"Run with PowerShell"** (or double-click `GeminiGauge.bat`).
+4. Shortcuts with the official icon will be created on your **Desktop** and **Start Menu**.
+
+---
+
+## ⚙️ Configuration Tutorial
+
+### Option A: Via GUI (Recommended)
+1. Launch **Gemini Gauge**.
+2. Click the **`Configurar (⚙️)`** button at the bottom of the window.
+3. Check the providers you want to monitor:
+   - **Google Gemini API**: Paste your API key (get one free at [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)).
+   - **Antigravity**: Keep checked to monitor your IDE quotas (works even when closed).
+   - **OpenAI**: Paste your OpenAI API key (`sk-...`).
+   - **Anthropic**: Paste your Claude API key (`sk-ant-...`).
+4. Click **Salvar e Atualizar**.
+
+### Option B: Via Config File
+Edit `~/.config/UniversalAIQuota/config.json`:
 
 ```json
 {
@@ -60,59 +128,44 @@ To monitor standalone API keys alongside your Antigravity account, create or edi
     },
     "gemini": {
       "enabled": true,
-      "api_key": "YOUR_GEMINI_API_KEY"
+      "api_key": "AIzaSy..."
     },
     "openai": {
-      "enabled": true,
-      "api_key": "sk-proj-YOUR_OPENAI_KEY"
+      "enabled": false,
+      "api_key": "sk-proj-..."
     },
     "anthropic": {
-      "enabled": true,
-      "api_key": "sk-ant-YOUR_ANTHROPIC_KEY"
+      "enabled": false,
+      "api_key": "sk-ant-..."
     }
   },
   "refresh_interval_seconds": 30
 }
 ```
 
-*You can also set environment variables: `GEMINI_API_KEY`, `OPENAI_API_KEY`, and `ANTHROPIC_API_KEY`.*
+---
+
+## 📊 Telemetry & Privacy
+
+Gemini Gauge sends a lightweight, anonymous heartbeat ping upon startup to:
+`https://api.vh2c.com.br/v1/geminigauje`
+
+- **What is sent**: Anonymous device hash (`machine_id`), operating system (`macOS`/`Linux`/`Windows`), architecture, and application version.
+- **What is NEVER sent**: Your API keys, model prompts, code, project files, or personal information.
+- **Purpose**: Global user count statistics and checking for new software updates.
+- If offline, the ping fails silently without affecting application startup or performance.
 
 ---
 
-## 🖥️ Installation
+## 💼 Custom AI Solutions for Business
 
-### 🍏 macOS
-```bash
-git clone https://github.com/vh2c/universal-ai-quota-monitor.git
-cd universal-ai-quota-monitor/macos
-./install.sh
-```
+Need custom AI agents, automated workflow orchestration, or bespoke software development for your organization?
 
-### 🐧 Linux
-```bash
-git clone https://github.com/vh2c/universal-ai-quota-monitor.git
-cd universal-ai-quota-monitor/linux
-./install.sh
-
-# Run via terminal:
-quota-hub
-# Or CLI headless mode:
-quota-hub --cli
-```
-
-### 🪟 Windows
-```powershell
-git clone https://github.com/vh2c/universal-ai-quota-monitor.git
-cd universal-ai-quota-monitor\windows
-.\install.ps1
-```
+Visit **[vh2c.com.br](https://vh2c.com.br)** or reach out to our engineering team.
 
 ---
-
-## 🏢 About VH2C
-
-Developed and maintained by [VH2C Soluções Tecnológicas](https://vh2c.com.br).
 
 ## 📄 License
 
-Distributed under the [MIT License](LICENSE). Copyright © 2026 [VH2C](https://vh2c.com.br).
+Distributed under the **MIT License**. See `LICENSE` for more information.
+Developed with ⚡ by **[VH2C](https://vh2c.com.br)**.
