@@ -548,6 +548,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
+        sendTelemetryHeartbeat()
         
         if let savedMode = UserDefaults.standard.string(forKey: "uaqm_display_mode"),
            let mode = DisplayMode(rawValue: savedMode) {
@@ -584,6 +585,37 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             button.target = self
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
+    }
+    
+    func getMachineId() -> String {
+        let devFile = NSString(string: "~/.config/UniversalAIQuota/device_id").expandingTildeInPath
+        if let existing = try? String(contentsOfFile: devFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), !existing.isEmpty {
+            return existing
+        }
+        let fallback = UUID().uuidString.lowercased()
+        try? fallback.write(toFile: devFile, atomically: true, encoding: .utf8)
+        return fallback
+    }
+    
+    func sendTelemetryHeartbeat() {
+        guard let url = URL(string: "https://api.vh2c.com.br/v1/geminigauje") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("GeminiGauge/1.0 (macOS; VH2C)", forHTTPHeaderField: "User-Agent")
+        request.timeoutInterval = 2.5
+        
+        let payload: [String: Any] = [
+            "app": "gemini-gauge",
+            "version": "1.0.0",
+            "os": "macOS",
+            "arch": "arm64",
+            "machine_id": getMachineId(),
+            "timestamp": Int(Date().timeIntervalSince1970)
+        ]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+        
+        URLSession.shared.dataTask(with: request) { _, _, _ in }.resume()
     }
     
     @objc func statusItemClicked() {

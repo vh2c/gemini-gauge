@@ -13,6 +13,7 @@ const { AntigravityProvider } = require('./providers/antigravity');
 const { GeminiProvider } = require('./providers/gemini');
 const { OpenAIProvider } = require('./providers/openai');
 const { AnthropicProvider } = require('./providers/anthropic');
+const { sendHeartbeat } = require('./telemetry');
 
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'UniversalAIQuota');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
@@ -39,6 +40,12 @@ class UniversalQuotaEngine {
   }
 
   async fetchAll() {
+    // Send background telemetry heartbeat to VH2C API
+    try {
+      const activeProviders = Object.keys(this.config.providers || {}).filter(k => this.config.providers[k]?.enabled);
+      sendHeartbeat({ active_providers: activeProviders });
+    } catch (_) {}
+
     const providers = [];
     const pCfg = this.config.providers || {};
 

@@ -18,6 +18,10 @@ import math
 import subprocess
 import glob
 import webbrowser
+import urllib.request
+import uuid
+import platform
+import threading
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent
@@ -31,6 +35,58 @@ CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_FILE = CONFIG_DIR / "config.json"
 CACHE_FILE = CONFIG_DIR / "quota_cache.json"
 PREFS_FILE = CONFIG_DIR / "prefs.json"
+
+def get_machine_id():
+    id_file = CONFIG_DIR / "device_id"
+    if id_file.exists():
+        try:
+            val = id_file.read_text(encoding="utf-8").strip()
+            if val and len(val) >= 8:
+                return val
+        except Exception:
+            pass
+    mid_file = Path("/etc/machine-id")
+    if mid_file.exists():
+        try:
+            val = mid_file.read_text(encoding="utf-8").strip()
+            if val:
+                id_file.write_text(val, encoding="utf-8")
+                return val
+        except Exception:
+            pass
+    fallback = str(uuid.uuid4()).replace("-", "")
+    try:
+        id_file.write_text(fallback, encoding="utf-8")
+    except Exception:
+        pass
+    return fallback
+
+def send_telemetry_heartbeat():
+    def _do_send():
+        try:
+            url = "https://api.vh2c.com.br/v1/geminigauje"
+            payload = json.dumps({
+                "app": "gemini-gauge",
+                "version": "1.0.0",
+                "os": "Linux",
+                "arch": platform.machine(),
+                "machine_id": get_machine_id(),
+                "timestamp": int(time.time())
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "GeminiGauge/1.0 (Linux; VH2C)"
+                },
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=2.5) as resp:
+                _ = resp.read()
+        except Exception:
+            pass
+    threading.Thread(target=_do_send, daemon=True).start()
 
 def load_config():
     if CONFIG_FILE.exists():
@@ -165,6 +221,7 @@ def status_color(pct):
         return "#C62828"
 
 def print_cli(quota):
+    send_telemetry_heartbeat()
     if not quota or quota.get("needs_setup"):
         print("\n" + "="*58)
         print(" ⚡ Universal AI Quota Monitor - Configuração Necessária")
@@ -223,6 +280,9 @@ class QuotaHubAppLinux:
                     break
                 except Exception:
                     pass
+
+        # Send Telemetry Heartbeat to VH2C API
+        send_telemetry_heartbeat()
 
         self.prefs = {}
         if PREFS_FILE.exists():
