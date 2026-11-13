@@ -749,12 +749,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         hudWindow?.level = isAlwaysOnTop ? .floating : .normal
     }
     
+    @objc func closeWindowClicked() {
+        fullWindow?.orderOut(nil)
+        hudWindow?.orderOut(nil)
+    }
+    
+    @objc func toggleModeClicked() {
+        if currentMode == .full {
+            switchToHudMode()
+        } else {
+            switchToFullMode()
+        }
+    }
+    
     func setupHudUI(with quota: QuotaData) {
         let items = quota.gaugeItems
         let isVertical = (hudOrientation == .vertical)
         
-        let hudW: CGFloat = isVertical ? 104 : (28 + CGFloat(items.count) * 96 + 10)
-        let hudH: CGFloat = isVertical ? (28 + CGFloat(items.count) * 96 + 16) : 108
+        let hudW: CGFloat = isVertical ? 108 : (24 + CGFloat(items.count) * 96 + 36)
+        let hudH: CGFloat = isVertical ? (32 + CGFloat(items.count) * 96 + 26) : 116
         
         if hudWindow == nil {
             let panel = NSPanel(
@@ -803,32 +816,116 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         container.layer?.borderColor = NSColor(srgbRed: 0x2A/255.0, green: 0x2A/255.0, blue: 0x2E/255.0, alpha: 1.0).cgColor
         container.layer?.borderWidth = 1.0
         
-        for (idx, item) in items.enumerated() {
-            let gauge = TachometerGaugeView(item: item)
-            if isVertical {
-                let y = hudH - CGFloat(idx + 1) * 96 - 16
-                gauge.frame = NSRect(x: 8, y: y, width: 88, height: 96)
-            } else {
-                let x = 16 + CGFloat(idx) * 96
-                gauge.frame = NSRect(x: x, y: 6, width: 88, height: 96)
-            }
-            container.addSubview(gauge)
-        }
-        
-        let menuBtn = NSButton(title: "", target: self, action: #selector(showHudContextMenu(_:)))
-        menuBtn.isBordered = false
         if isVertical {
-            menuBtn.frame = NSRect(x: (hudW - 36) / 2.0, y: 6, width: 36, height: 16)
+            // Barra superior de controle vertical: [⤢ Alternar] [⋯ Opções] [✕ Fechar]
+            let topBarY = hudH - 26
+            
+            let toggleBtn = NSButton(title: "", target: self, action: #selector(toggleModeClicked))
+            toggleBtn.isBordered = false
+            toggleBtn.frame = NSRect(x: 8, y: topBarY, width: 22, height: 20)
+            toggleBtn.toolTip = "Alternar para Janela Completa (Cmd+M)"
+            if let sym = NSImage(systemSymbolName: "arrow.up.left.and.arrow.down.right", accessibilityDescription: "Alternar Modo") {
+                let cfg = NSImage.SymbolConfiguration(pointSize: 10, weight: .bold)
+                toggleBtn.image = sym.withSymbolConfiguration(cfg)
+                toggleBtn.contentTintColor = NSColor(white: 0.65, alpha: 1.0)
+            }
+            container.addSubview(toggleBtn)
+            
+            let menuBtn = NSButton(title: "", target: self, action: #selector(showHudContextMenu(_:)))
+            menuBtn.isBordered = false
+            menuBtn.frame = NSRect(x: (hudW - 22) / 2.0, y: topBarY, width: 22, height: 20)
+            menuBtn.toolTip = "Menu de Opções"
+            if let sym = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "Opções") {
+                let cfg = NSImage.SymbolConfiguration(pointSize: 10, weight: .bold)
+                menuBtn.image = sym.withSymbolConfiguration(cfg)
+                menuBtn.contentTintColor = NSColor(white: 0.65, alpha: 1.0)
+            }
+            container.addSubview(menuBtn)
+            
+            let closeBtn = NSButton(title: "", target: self, action: #selector(closeWindowClicked))
+            closeBtn.isBordered = false
+            closeBtn.frame = NSRect(x: hudW - 30, y: topBarY, width: 22, height: 20)
+            closeBtn.toolTip = "Fechar Janela (✕)"
+            if let sym = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Fechar") {
+                let cfg = NSImage.SymbolConfiguration(pointSize: 10, weight: .bold)
+                closeBtn.image = sym.withSymbolConfiguration(cfg)
+                closeBtn.contentTintColor = NSColor(white: 0.65, alpha: 1.0)
+            }
+            container.addSubview(closeBtn)
+            
+            for (idx, item) in items.enumerated() {
+                let gauge = TachometerGaugeView(item: item)
+                let y = hudH - 28 - CGFloat(idx + 1) * 96
+                gauge.frame = NSRect(x: 10, y: y, width: 88, height: 96)
+                container.addSubview(gauge)
+            }
+            
+            let brandBtn = NSButton(title: "", target: self, action: #selector(brandClicked))
+            brandBtn.isBordered = false
+            brandBtn.frame = NSRect(x: 4, y: 4, width: hudW - 8, height: 16)
+            brandBtn.attributedTitle = NSAttributedString(
+                string: "vh2c.com.br",
+                attributes: [
+                    .foregroundColor: NSColor(white: 0.45, alpha: 1.0),
+                    .font: NSFont.systemFont(ofSize: 8.5, weight: .medium)
+                ]
+            )
+            container.addSubview(brandBtn)
         } else {
-            menuBtn.frame = NSRect(x: hudW - 24, y: (hudH - 36) / 2.0, width: 16, height: 36)
+            // Horizontal HUD
+            for (idx, item) in items.enumerated() {
+                let gauge = TachometerGaugeView(item: item)
+                let x = 12 + CGFloat(idx) * 96
+                gauge.frame = NSRect(x: x, y: 14, width: 88, height: 96)
+                container.addSubview(gauge)
+            }
+            
+            let colX = hudW - 30
+            let closeBtn = NSButton(title: "", target: self, action: #selector(closeWindowClicked))
+            closeBtn.isBordered = false
+            closeBtn.frame = NSRect(x: colX, y: hudH - 28, width: 22, height: 20)
+            closeBtn.toolTip = "Fechar Janela (✕)"
+            if let sym = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Fechar") {
+                let cfg = NSImage.SymbolConfiguration(pointSize: 10, weight: .bold)
+                closeBtn.image = sym.withSymbolConfiguration(cfg)
+                closeBtn.contentTintColor = NSColor(white: 0.65, alpha: 1.0)
+            }
+            container.addSubview(closeBtn)
+            
+            let toggleBtn = NSButton(title: "", target: self, action: #selector(toggleModeClicked))
+            toggleBtn.isBordered = false
+            toggleBtn.frame = NSRect(x: colX, y: (hudH - 20) / 2.0, width: 22, height: 20)
+            toggleBtn.toolTip = "Alternar para Janela Completa (Cmd+M)"
+            if let sym = NSImage(systemSymbolName: "arrow.up.left.and.arrow.down.right", accessibilityDescription: "Alternar Modo") {
+                let cfg = NSImage.SymbolConfiguration(pointSize: 10, weight: .bold)
+                toggleBtn.image = sym.withSymbolConfiguration(cfg)
+                toggleBtn.contentTintColor = NSColor(white: 0.65, alpha: 1.0)
+            }
+            container.addSubview(toggleBtn)
+            
+            let menuBtn = NSButton(title: "", target: self, action: #selector(showHudContextMenu(_:)))
+            menuBtn.isBordered = false
+            menuBtn.frame = NSRect(x: colX, y: 10, width: 22, height: 20)
+            menuBtn.toolTip = "Menu de Opções"
+            if let sym = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "Opções") {
+                let cfg = NSImage.SymbolConfiguration(pointSize: 10, weight: .bold)
+                menuBtn.image = sym.withSymbolConfiguration(cfg)
+                menuBtn.contentTintColor = NSColor(white: 0.65, alpha: 1.0)
+            }
+            container.addSubview(menuBtn)
+            
+            let brandBtn = NSButton(title: "", target: self, action: #selector(brandClicked))
+            brandBtn.isBordered = false
+            brandBtn.frame = NSRect(x: 12, y: 2, width: 90, height: 12)
+            brandBtn.attributedTitle = NSAttributedString(
+                string: "vh2c.com.br",
+                attributes: [
+                    .foregroundColor: NSColor(white: 0.40, alpha: 1.0),
+                    .font: NSFont.systemFont(ofSize: 8.0, weight: .medium)
+                ]
+            )
+            container.addSubview(brandBtn)
         }
-        
-        if let sym = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "Opções") {
-            let cfg = NSImage.SymbolConfiguration(pointSize: 9.5, weight: .bold)
-            menuBtn.image = sym.withSymbolConfiguration(cfg)
-            menuBtn.contentTintColor = NSColor(white: 0.45, alpha: 1.0)
-        }
-        container.addSubview(menuBtn)
         
         panel.contentView = container
         panel.orderFront(nil)
@@ -850,7 +947,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menu.addItem(titleItem)
         menu.addItem(NSMenuItem.separator())
         
-        let fullItem = NSMenuItem(title: "Alternar para Modo Janela Completa", action: #selector(switchToFullMode), keyEquivalent: "m")
+        let fullItem = NSMenuItem(title: "Alternar Modo de Tela (Janela / HUD)", action: #selector(toggleModeClicked), keyEquivalent: "m")
         fullItem.target = self
         menu.addItem(fullItem)
         
@@ -874,7 +971,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         pinItem.state = isAlwaysOnTop ? .on : .off
         menu.addItem(pinItem)
         
+        let brandItem = NSMenuItem(title: "Visite vh2c.com.br", action: #selector(brandClicked), keyEquivalent: "")
+        brandItem.target = self
+        menu.addItem(brandItem)
+        
         menu.addItem(NSMenuItem.separator())
+        
+        let closeWinItem = NSMenuItem(title: "Fechar Janela (✕)", action: #selector(closeWindowClicked), keyEquivalent: "w")
+        closeWinItem.target = self
+        menu.addItem(closeWinItem)
         
         let closeItem = NSMenuItem(title: "Encerrar Gemini Gauge", action: #selector(closeClicked), keyEquivalent: "q")
         closeItem.target = self
@@ -895,8 +1000,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         for g in quota.groups {
             totalCardsHeight += 32 + CGFloat(g.buckets.count * 48 + 14)
         }
+        let footerHeight: CGFloat = 66
         let contentHeight: CGFloat = 65 + totalCardsHeight + 10
-        let windowHeight = min(contentHeight + 52, 700)
+        let windowHeight = min(contentHeight + footerHeight + 10, 720)
         
         if fullWindow == nil {
             let windowRect = NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight)
@@ -924,8 +1030,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         mainView.autoresizingMask = [.width, .height]
         window.contentView = mainView
         
-        let scrollViewHeight = windowHeight - 50
-        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 50, width: windowWidth, height: scrollViewHeight))
+        let scrollViewHeight = windowHeight - footerHeight
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: footerHeight, width: windowWidth, height: scrollViewHeight))
         scrollView.hasVerticalScroller = contentHeight > scrollViewHeight
         scrollView.drawsBackground = true
         scrollView.backgroundColor = colorBg18
@@ -1037,13 +1143,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let btnBg = NSColor(srgbRed: 0xEE/255.0, green: 0xEE/255.0, blue: 0xF0/255.0, alpha: 1.0)
         let btnText = NSColor(srgbRed: 0x18/255.0, green: 0x18/255.0, blue: 0x18/255.0, alpha: 1.0)
         
+        // ----------------- RODAPÉ (Linha 1: Botões) -----------------
+        let footerY: CGFloat = 28
+        
         // 1. Atualizar
         let refreshBtn = NSButton(title: "", target: self, action: #selector(refreshClicked))
         refreshBtn.isBordered = false
         refreshBtn.wantsLayer = true
         refreshBtn.layer?.backgroundColor = btnBg.cgColor
         refreshBtn.layer?.cornerRadius = 6
-        refreshBtn.frame = NSRect(x: 14, y: 12, width: 88, height: 30)
+        refreshBtn.frame = NSRect(x: 14, y: footerY, width: 88, height: 28)
         refreshBtn.keyEquivalent = "r"
         refreshBtn.keyEquivalentModifierMask = .command
         refreshBtn.imagePosition = .imageLeading
@@ -1067,17 +1176,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         self.refreshBtn = refreshBtn
         mainView.addSubview(refreshBtn)
         
-        // 2. Modo HUD
-        let hudBtn = NSButton(title: "", target: self, action: #selector(switchToHudMode))
+        // 2. Alternar Modo de Tela (Barra HUD)
+        let hudBtn = NSButton(title: "", target: self, action: #selector(toggleModeClicked))
         hudBtn.isBordered = false
         hudBtn.wantsLayer = true
         hudBtn.layer?.backgroundColor = btnBg.cgColor
         hudBtn.layer?.cornerRadius = 6
-        hudBtn.frame = NSRect(x: 108, y: 12, width: 92, height: 30)
+        hudBtn.frame = NSRect(x: 108, y: footerY, width: 110, height: 28)
         hudBtn.keyEquivalent = "m"
         hudBtn.keyEquivalentModifierMask = .command
         hudBtn.imagePosition = .imageLeading
         hudBtn.imageHugsTitle = true
+        hudBtn.toolTip = "Alternar para Modo Barra HUD (Cmd+M)"
         hudBtn.attributedTitle = NSAttributedString(
             string: "Barra HUD",
             attributes: [
@@ -1085,7 +1195,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 .font: NSFont.systemFont(ofSize: 11.5, weight: .semibold)
             ]
         )
-        if let symbol = NSImage(systemSymbolName: "gauge.with.needle", accessibilityDescription: "Modo HUD") {
+        if let symbol = NSImage(systemSymbolName: "arrow.up.left.and.arrow.down.right", accessibilityDescription: "Alternar Modo") {
             let config = NSImage.SymbolConfiguration(pointSize: 10, weight: .bold)
             if #available(macOS 12.0, *) {
                 let tinted = config.applying(.init(paletteColors: [btnText]))
@@ -1102,11 +1212,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         settingsBtn.wantsLayer = true
         settingsBtn.layer?.backgroundColor = btnBg.cgColor
         settingsBtn.layer?.cornerRadius = 6
-        settingsBtn.frame = NSRect(x: 206, y: 12, width: 94, height: 30)
+        settingsBtn.frame = NSRect(x: 224, y: footerY, width: 94, height: 28)
         settingsBtn.keyEquivalent = ","
         settingsBtn.keyEquivalentModifierMask = .command
         settingsBtn.imagePosition = .imageLeading
         settingsBtn.imageHugsTitle = true
+        settingsBtn.toolTip = "Configurar Provedores e Chaves de API (Cmd+,)"
         settingsBtn.attributedTitle = NSAttributedString(
             string: "Configurar",
             attributes: [
@@ -1125,35 +1236,49 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         mainView.addSubview(settingsBtn)
         
-        // 4. Marca / Link
-        let brandBtn = NSButton(title: "", target: self, action: #selector(brandClicked))
-        brandBtn.isBordered = false
-        brandBtn.frame = NSRect(x: 306, y: 17, width: 74, height: 20)
-        brandBtn.attributedTitle = NSAttributedString(
-            string: "vh2c.com.br",
-            attributes: [
-                .foregroundColor: NSColor(white: 0.40, alpha: 1.0),
-                .font: NSFont.systemFont(ofSize: 9.5, weight: .regular)
-            ]
-        )
-        mainView.addSubview(brandBtn)
-        
-        // 5. Fechar
-        let closeBtn = NSButton(title: "", target: self, action: #selector(closeClicked))
+        // 4. Botão '✕' Fechar Janela
+        let closeBtn = NSButton(title: "", target: self, action: #selector(closeWindowClicked))
         closeBtn.isBordered = false
         closeBtn.wantsLayer = true
         closeBtn.layer?.backgroundColor = btnBg.cgColor
         closeBtn.layer?.cornerRadius = 6
-        closeBtn.frame = NSRect(x: windowWidth - 70, y: 12, width: 56, height: 30)
-        closeBtn.keyEquivalent = "\u{1b}"
+        closeBtn.frame = NSRect(x: windowWidth - 76, y: footerY, width: 62, height: 28)
+        closeBtn.keyEquivalent = "w"
+        closeBtn.keyEquivalentModifierMask = .command
+        closeBtn.imagePosition = .imageLeading
+        closeBtn.imageHugsTitle = true
+        closeBtn.toolTip = "Fechar Janela (✕)"
         closeBtn.attributedTitle = NSAttributedString(
-            string: "Fechar",
+            string: " Fechar",
             attributes: [
                 .foregroundColor: btnText,
                 .font: NSFont.systemFont(ofSize: 11.5, weight: .semibold)
             ]
         )
+        if let symbol = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Fechar") {
+            let config = NSImage.SymbolConfiguration(pointSize: 10, weight: .bold)
+            if #available(macOS 12.0, *) {
+                let tinted = config.applying(.init(paletteColors: [btnText]))
+                closeBtn.image = symbol.withSymbolConfiguration(tinted)
+            } else {
+                closeBtn.image = symbol.withSymbolConfiguration(config)
+            }
+        }
         mainView.addSubview(closeBtn)
+        
+        // ----------------- RODAPÉ (Linha 2: Menção vh2c.com.br) -----------------
+        let brandBtn = NSButton(title: "", target: self, action: #selector(brandClicked))
+        brandBtn.isBordered = false
+        brandBtn.frame = NSRect(x: 14, y: 5, width: windowWidth - 28, height: 18)
+        brandBtn.toolTip = "Acesse vh2c.com.br"
+        brandBtn.attributedTitle = NSAttributedString(
+            string: "⚡ Gemini Gauge  •  Desenvolvido por vh2c.com.br",
+            attributes: [
+                .foregroundColor: NSColor(srgbRed: 0x38/255.0, green: 0xBD/255.0, blue: 0xF8/255.0, alpha: 0.90),
+                .font: NSFont.systemFont(ofSize: 10.5, weight: .medium)
+            ]
+        )
+        mainView.addSubview(brandBtn)
         
         if isFirstLaunch {
             isFirstLaunch = false

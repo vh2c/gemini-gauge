@@ -477,32 +477,36 @@ class QuotaHubAppLinux:
                 fill_w = max(4, int(bar_w * (pct / 100.0)))
                 bar_canvas.create_rectangle(0, 0, fill_w, 6, fill=val_col, outline="")
 
-        footer = tk.Frame(self.root, bg="#181818", padx=20, pady=12)
+        footer = tk.Frame(self.root, bg="#181818", padx=20, pady=10)
         footer.pack(fill="x", side="bottom")
 
-        self.refresh_btn = tk.Button(footer, text="↻ Atualizar", font=("Sans", 9, "bold"), fg="#181818", bg="#EEEEF0",
+        btn_row = tk.Frame(footer, bg="#181818")
+        btn_row.pack(fill="x")
+
+        self.refresh_btn = tk.Button(btn_row, text="↻ Atualizar", font=("Sans", 9, "bold"), fg="#181818", bg="#EEEEF0",
                                      activebackground="#FFFFFF", relief="flat", padx=10, pady=4, cursor="hand2",
                                      command=lambda: self.refresh(True))
         self.refresh_btn.pack(side="left")
 
-        hud_btn = tk.Button(footer, text="⚏ Barra HUD", font=("Sans", 9, "bold"), fg="#181818", bg="#EEEEF0",
+        hud_btn = tk.Button(btn_row, text="⤢ Barra HUD", font=("Sans", 9, "bold"), fg="#181818", bg="#EEEEF0",
                             activebackground="#FFFFFF", relief="flat", padx=10, pady=4, cursor="hand2",
                             command=self.toggle_mode)
         hud_btn.pack(side="left", padx=8)
 
-        cfg_btn = tk.Button(footer, text="⚙️ Configurar", font=("Sans", 9, "bold"), fg="#181818", bg="#EEEEF0",
+        cfg_btn = tk.Button(btn_row, text="⚙️ Configurar", font=("Sans", 9, "bold"), fg="#181818", bg="#EEEEF0",
                             activebackground="#FFFFFF", relief="flat", padx=10, pady=4, cursor="hand2",
                             command=self.open_settings)
         cfg_btn.pack(side="left", padx=2)
 
-        brand_lbl = tk.Label(footer, text="vh2c.com.br", font=("Sans", 8), fg="#666666", bg="#181818", cursor="hand2")
-        brand_lbl.pack(side="left", padx=10)
-        brand_lbl.bind("<Button-1>", lambda e: webbrowser.open("https://vh2c.com.br"))
-
-        close_btn = tk.Button(footer, text="Fechar", font=("Sans", 9, "bold"), fg="#181818", bg="#EEEEF0",
-                              activebackground="#FFFFFF", relief="flat", padx=10, pady=4, cursor="hand2",
+        close_btn = tk.Button(btn_row, text="✕ Fechar", font=("Sans", 9, "bold"), fg="#181818", bg="#EEEEF0",
+                              activebackground="#FFFFFF", relief="flat", padx=12, pady=4, cursor="hand2",
                               command=self.root.destroy)
         close_btn.pack(side="right")
+
+        brand_lbl = tk.Label(footer, text="⚡ Gemini Gauge  •  Desenvolvido por vh2c.com.br", font=("Sans", 8, "bold"),
+                             fg="#38BDF8", bg="#181818", cursor="hand2")
+        brand_lbl.pack(pady=(8, 2))
+        brand_lbl.bind("<Button-1>", lambda e: webbrowser.open("https://vh2c.com.br"))
 
     def setup_hud_ui(self):
         self.root.overrideredirect(True)
